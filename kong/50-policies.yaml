@@ -1,0 +1,167 @@
+# AI Policies. The four guards form GNB's regulated bundle, reviewed once and attached per use case
+# (consumer group). Audit logging and metrics are global.
+_defaults:
+  kongctl:
+    namespace: gnb-demo
+
+ai_gateway_policies:
+  - ref: injection-guard
+    ai_gateway: !lookup {id: !env AI_GATEWAY_ID}
+    name: injection-guard
+    display_name: Prompt-injection guard
+    type: ai-prompt-guard
+    config:
+      deny_patterns:
+        - '(?i)ignore (all|any|the)? ?(previous|prior|above)? ?instructions'
+        - '(?i)(reveal|print|show|repeat)[^.]{0,30}system prompt'
+      rejection_mode: verbose
+
+  - ref: pii-redact
+    ai_gateway: !lookup {id: !env AI_GATEWAY_ID}
+    name: pii-redact
+    display_name: PII redaction (incl. Emirates ID)
+    type: ai-sanitizer
+    config:
+      host: pii-service
+      port: 8080
+      anonymize: [general, email, phone, creditcard, custom]
+      custom_patterns:
+        - name: emirates_id
+          regex: '784-?\d{4}-?\d{7}-?\d'
+          score: 0.95
+      redact_type: placeholder
+      recover_redacted: false              # the model and the customer-facing echo show placeholders
+      skip_logging_sanitized_items: true   # logs say "PII found", never the value
+      stop_on_error: true                  # PII service down -> nothing reaches the model
+
+  - ref: advice-guard
+    ai_gateway: !lookup {id: !env AI_GATEWAY_ID}
+    name: advice-guard
+    display_name: Investment-advice guard (by meaning)
+    type: ai-semantic-prompt-guard
+    config:
+      embeddings: &embeddings          # local embeddings (Ollama), reused by the response guard
+        model:
+          provider: ollama
+          name: nomic-embed-text
+          options:
+            upstream_url: http://host.docker.internal:11434   # base URL only: Kong appends /api/embed
+      vectordb:
+        strategy: redis
+        dimensions: 768
+        distance_metric: cosine
+        threshold: 0.4
+        redis: {host: redis, port: 6379}
+      search: {threshold: 0.4}
+      rules:
+        deny_prompts:
+          - Which stocks should I buy?
+          - Should I put my savings into gold or crypto?
+          - Recommend an investment portfolio for me
+          - What shares will go up this year?
+          - Where should I invest my money for the best return?
+      rejection_mode: verbose
+
+  - ref: response-guard
+    ai_gateway: !lookup {id: !env AI_GATEWAY_ID}
+    name: response-guard
+    display_name: Answer check (commits-the-bank statements)
+    type: ai-semantic-response-guard
+    config:
+      embeddings: *embeddings
+      vectordb:
+        strategy: redis
+        dimensions: 768
+        distance_metric: cosine
+        threshold: 0.38            # calibrated 21 Oct: off-policy promises score ~0.21-0.29, harmless answers 0.46+
+        redis: {host: redis, port: 6379}
+      search: {threshold: 0.38}
+      rules:
+        deny_responses:              # specific commitments only: generic phrases also match harmless answers
+          - Yes, your personal loan has been approved and you can tell your employer.
+          - Yes, your credit card limit increase has been approved.
+          - We guarantee your mortgage application will be approved.
+      rejection_mode: verbose
+
+  - ref: audit-log
+    ai_gateway: !lookup {id: !env AI_GATEWAY_ID}
+    name: audit-log
+    display_name: Audit log (one line per call, no payloads)
+    type: file-log
+    global: true
+    config:
+      path: /dev/stdout
+      custom_fields_by_lua:
+        end_user: "return kong.request.get_header('X-End-User')"
+        request.headers.apikey: "return nil"          # never write client API keys to the audit log
+        use_case: "local a = ngx.ctx.authenticated_groups if a and a[1] then return a[1] end local g = kong.client.get_consumer_groups() return g and g[1] and g[1].name or nil"
+
+  - ref: ai-metrics
+    ai_gateway: !lookup {id: !env AI_GATEWAY_ID}
+    name: ai-metrics
+    display_name: AI metrics (Prometheus)
+    type: prometheus
+    global: true
+    config:
+      ai_metrics: true
+      per_consumer: true
+
+  - ref: semantic-cache                      # Act 3: a reworded repeat is answered without a model call
+    ai_gateway: !lookup {id: !env AI_GATEWAY_ID}
+    name: semantic-cache
+    display_name: Semantic cache (copilot)
+    type: ai-semantic-cache
+    config:
+      embeddings:
+        model:
+          provider: ollama
+          name: nomic-embed-text
+          options:
+            upstream_url: http://host.docker.internal:11434   # base URL only: Kong appends /api/embed
+      vectordb:
+        strategy: redis
+        dimensions: 768
+        distance_metric: cosine
+        threshold: 0.12            # calibrated 21 Oct: rewordings hit, 'business current account' misses
+        redis: {host: redis, port: 6379}
+      cache_ttl: 3600
+      ignore_system_prompts: true          # key on the customer's question, not the app's prompt
+      message_countback: 1
+
+  - ref: token-budget                        # Act 3: the retail copilot's token budget on gnb-copilot
+    ai_gateway: !lookup {id: !env AI_GATEWAY_ID}
+    name: token-budget
+    display_name: Token budget per use case
+    type: ai-rate-limiting-advanced
+    config:                                  # attached to gnb-copilot (model scope), so only Act 3's model counts
+      error_message: "GNB AI budget reached for this use case. Contact the AI platform team."
+      policies:
+        - match:
+            - {type: consumer_group, key: name, values: [retail-copilot]}
+          window_type: fixed
+          limits:
+            - {limit: 500000, window_size: 86400, tokens_count_strategy: total_tokens}   # the daily budget on the slide
+            - {limit: 700, window_size: 600, tokens_count_strategy: total_tokens}        # demo budget: ~5 questions after Act 3's first calls
+
+  - ref: mcp-rate-limit                      # MCP: caps tool calls per agent identity, so a runaway agent can't hammer card-services
+    ai_gateway: !lookup {id: !env AI_GATEWAY_ID}
+    name: mcp-rate-limit
+    display_name: MCP tool-call rate limit
+    type: rate-limiting                      # attached through the MCP server (60-mcp.yaml); set high: the demo never reaches it
+    config:
+      minute: 120
+      limit_by: consumer
+      policy: local
+      error_message: "Too many tool calls from this identity. Contact the AI platform team."
+
+  - ref: standard-budget                     # 13th use case: the standard daily token budget a new use case starts with
+    ai_gateway: !lookup {id: !env AI_GATEWAY_ID}
+    name: standard-budget
+    display_name: Standard token budget (new use cases)
+    type: ai-rate-limiting-advanced
+    config:                                  # attached through the new use case's consumer group (onboard/), no match needed
+      error_message: "GNB AI budget reached for this use case. Contact the AI platform team."
+      policies:
+        - window_type: fixed
+          limits:
+            - {limit: 500000, window_size: 86400, tokens_count_strategy: total_tokens}

@@ -1,0 +1,73 @@
+# GNB demo stack: everything that plays "GNB's data centre" on the laptop.
+# Models run natively in Ollama (Metal GPU) on the host, reached via host.docker.internal.
+name: gnb
+
+services:
+  kong-dp:
+    image: kong/kong-ai-gateway:2.2.0-distroless   # must match the AI Gateway's runtime exactly; do not upgrade
+    restart: unless-stopped
+    depends_on: [konnect-egress]
+    environment:
+      KONG_ROLE: data_plane
+      KONG_DATABASE: "off"
+      KONG_KONNECT_MODE: "on"
+      KONG_VITALS: "off"
+      KONG_CLUSTER_MTLS: pki
+      # Your AI Gateway's endpoints, from .env (setup.sh asks for them)
+      KONG_CLUSTER_CONTROL_PLANE: ${KONNECT_CP_HOST:?set KONNECT_CP_HOST in .env (run ./setup.sh)}:443
+      KONG_CLUSTER_SERVER_NAME: ${KONNECT_CP_HOST}
+      KONG_CLUSTER_TELEMETRY_ENDPOINT: ${KONNECT_TP_HOST:?set KONNECT_TP_HOST in .env (run ./setup.sh)}:443
+      KONG_CLUSTER_TELEMETRY_SERVER_NAME: ${KONNECT_TP_HOST}
+      KONG_CLUSTER_CERT: /etc/kong/certs/cluster.crt
+      KONG_CLUSTER_CERT_KEY: /etc/kong/certs/cluster.key
+      KONG_LUA_SSL_TRUSTED_CERTIFICATE: system
+      # The data centre's only route to Konnect: stopping konnect-egress = "Konnect link cut"
+      KONG_CLUSTER_USE_PROXY: "on"
+      KONG_PROXY_SERVER: http://konnect-egress:3128
+      # Status API for /metrics (Prometheus policy) and /status
+      KONG_STATUS_LISTEN: 0.0.0.0:8100
+      KONG_PROXY_ACCESS_LOG: /dev/stdout
+      KONG_PROXY_ERROR_LOG: /dev/stderr
+      KONG_NGINX_MAIN_ENV: RES_OPTIONS
+      KONG_NGINX_WORKER_PROCESSES: "2"   # laptop: 2 workers instead of one per CPU (saves ~1 GB)
+      KONG_GNB_OPENAI_BEARER: "Bearer ${OPENAI_API_KEY}"   # env vault secret (from .env); Konnect only stores {vault://gnb-env/openai-bearer}
+      RES_OPTIONS: single-request-reopen
+    volumes:
+      - ./certs:/etc/kong/certs:ro
+      - kong-prefix:/usr/local/kong        # keeps the last-known config (LMDB) across restarts
+    tmpfs:
+      - /tmp
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    ports:
+      - "8000:8000"   # AI traffic (apps, agents, MCP)
+      - "8100:8100"   # status + metrics
+
+  konnect-egress:
+    image: python:3.12-slim
+    restart: unless-stopped
+    command: ["python", "-u", "/app/connect_proxy.py"]
+    volumes:
+      - ./egress:/app:ro
+
+  redis:
+    image: redis:8.0          # bundles the Query Engine (RediSearch) and JSON needed by semantic features
+    restart: unless-stopped
+
+  pii-service:
+    image: kong/ai-pii-service:v0.2.2-en
+    restart: unless-stopped
+    environment:
+      GUNICORN_WORKERS: "1"   # laptop: one worker is enough for the demo
+
+  card-services:
+    image: python:3.12-slim
+    restart: unless-stopped
+    command: ["python", "-u", "/app/app.py"]
+    volumes:
+      - ./mocks/card-services:/app:ro
+    ports:
+      - "18080:8080"   # host access for reset/debug only; Kong reaches it as card-services:8080
+
+volumes:
+  kong-prefix:

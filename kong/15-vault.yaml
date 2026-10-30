@@ -1,0 +1,12 @@
+# AI Vault: secrets resolved on the data plane from its own environment. Konnect stores only the reference.
+_defaults:
+  kongctl:
+    namespace: gnb-demo
+ai_gateway_vaults:
+  - ref: gnb-env
+    ai_gateway: !lookup {id: !env AI_GATEWAY_ID}
+    name: gnb-env
+    description: Secrets from the data plane's environment (KONG_GNB_*); never stored in Konnect.
+    type: env
+    config:
+      prefix: KONG_GNB_

@@ -1,0 +1,112 @@
+# AI Models: one governed, OpenAI-compatible endpoint per model.
+_defaults:
+  kongctl:
+    namespace: gnb-demo
+ai_gateway_models:
+  - ref: gnb-assistant
+    ai_gateway: !lookup {id: !env AI_GATEWAY_ID}
+    name: gnb-assistant
+    display_name: GNB Assistant (in-country)
+    type: model
+    capabilities: [generate]
+    formats: [{type: openai}]
+    access:
+      auth_strategies: [!ref gnb-key-auth#name]
+      acls:
+        allow: [retail-copilot, aml-summaries, credit-memo, knowledge-assistant, complaints-copilot]   # card-ops-agent is not allowed
+    targets:
+      - name: qwen2.5:7b                  # DC1 primary
+        provider: !ref gnb-factory-dc1#name
+        weight: 100
+        config: {type: ollama, upstream_url: "http://host.docker.internal:11501", temperature: 0, max_tokens: 200, input_cost: 2.0, output_cost: 6.0}
+      - name: qwen2.5:1.5b                # DC2 DR: smaller fallback model
+        provider: !ref gnb-factory-dc2#name
+        weight: 10
+        config: {type: ollama, upstream_url: "http://host.docker.internal:11502", temperature: 0, max_tokens: 200, input_cost: 0.3, output_cost: 0.9}
+    config:
+      route: {paths: ["/v1"]}
+      response_streaming: deny
+      logging: {payloads: false}
+      balancer:
+        algorithm: priority
+        retries: 2
+        connect_timeout: 1000
+        max_fails: 1
+        fail_timeout: 10000                 # DC1 is retried 10 s after it recovers (Act 2 follows Act 1)
+        failover_criteria: [error, timeout, http_502, http_503, non_idempotent]
+
+  - ref: gnb-copilot                       # Act 3: routes each prompt by meaning to the right-sized model
+    ai_gateway: !lookup {id: !env AI_GATEWAY_ID}
+    name: gnb-copilot
+    display_name: GNB Copilot (semantic routing)
+    type: model
+    capabilities: [generate]
+    formats: [{type: openai}]
+    access:
+      auth_strategies: [!ref gnb-key-auth#name]
+      acls:
+        allow: [retail-copilot, aml-summaries, credit-memo, knowledge-assistant, complaints-copilot]
+    targets:
+      - name: qwen2.5:1.5b                 # small model: routine questions (the default)
+        provider: !ref gnb-factory-dc1#name
+        semantic_description: CATCHALL
+        config: {type: ollama, upstream_url: "http://host.docker.internal:11501", temperature: 0, max_tokens: 200, input_cost: 0.3, output_cost: 0.9}
+      - name: qwen2.5:7b                   # the factory's large model: analysis that needs it
+        provider: !ref gnb-factory-dc1#name
+        semantic_description: "Analysis of AML alerts, suspicious transactions and cash structuring, credit memos and credit risk, regulatory and compliance assessment"
+        config: {type: ollama, upstream_url: "http://host.docker.internal:11501", temperature: 0, max_tokens: 250, input_cost: 2.0, output_cost: 6.0}
+    policies: [!ref semantic-cache#name, !ref token-budget#name]
+    config:
+      route: {paths: ["/v1"]}
+      response_streaming: deny
+      logging: {payloads: false}
+      balancer:
+        algorithm: semantic
+        retries: 1
+        connect_timeout: 2000
+        embeddings:
+          provider: !ref gnb-factory-dc1#name
+          name: nomic-embed-text
+          config: {type: ollama, upstream_url: "http://host.docker.internal:11434"}
+        vectordb:
+          type: redis
+          host: redis
+          port: 6379
+          ssl: false
+          ssl_verify: false
+          dimensions: 768
+          distance_metric: cosine
+          threshold: 0.5
+
+  - ref: gnb-agent-llm                     # Act 4: the agent's model: OpenAI first, the factory's 7B as fallback
+    ai_gateway: !lookup {id: !env AI_GATEWAY_ID}
+    name: gnb-agent-llm
+    display_name: GNB Agent model (gpt-5.5, factory 7B fallback)
+    type: model
+    capabilities: [generate]
+    formats: [{type: openai}]
+    access:
+      auth_strategies: [!ref gnb-key-auth#name]
+      acls:
+        allow: [card-ops-agent, card-ops-supervisor]
+    targets:
+      - name: gpt-5.5                      # the agent's brain: a cloud model (named openly on stage); Kong governs it the same way
+                                           # (gpt-6.x can't use function tools on /v1/chat/completions; gpt-6.1-sol stays for the optional add-on)
+        provider: !ref openai-cloud#name
+        weight: 100
+        config: {type: openai, input_cost: 2.0, output_cost: 8.0}   # illustrative; replace with OpenAI's list price
+      - name: qwen2.5:7b                   # automatic fallback if OpenAI is unreachable (e.g. venue Wi-Fi)
+        provider: !ref gnb-factory-dc1#name
+        weight: 10
+        config: {type: ollama, upstream_url: "http://host.docker.internal:11501", temperature: 0, max_tokens: 300, input_cost: 2.0, output_cost: 6.0}
+    config:
+      route: {paths: ["/v1"]}
+      response_streaming: deny
+      logging: {payloads: false}
+      balancer:
+        algorithm: priority
+        retries: 1
+        connect_timeout: 3000
+        max_fails: 1
+        fail_timeout: 10000
+        failover_criteria: [error, timeout, http_429, http_500, http_502, http_503, non_idempotent]

@@ -1,0 +1,19 @@
+# The 13th use case: a complaints copilot. This file is everything it takes to bring it into production.
+_defaults:
+  kongctl:
+    namespace: gnb-demo
+ai_gateway_consumers:
+  - ref: omar
+    ai_gateway: !lookup {id: !env AI_GATEWAY_ID}
+    name: omar
+    display_name: Omar (complaints officer)
+    type: api-key
+    credentials:
+      - {ref: omar-key, name: omar-key, display_name: Omar key, type: api-key, api_key: !secret {source: !env KEY_OMAR}}
+ai_gateway_consumer_groups:
+  - ref: complaints-copilot
+    ai_gateway: !lookup {id: !env AI_GATEWAY_ID}
+    name: complaints-copilot
+    display_name: Complaints copilot
+    consumers: [!ref omar#name]
+    policies: [injection-guard, pii-redact, advice-guard, response-guard, standard-budget]   # GNB's reviewed bundle + the standard budget

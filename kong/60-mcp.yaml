@@ -1,0 +1,55 @@
+# AI MCP Server: GNB's card-services API exposed as governed tools for agents.
+# Tools are mapped from mocks/card-services/openapi.yaml. A tool an identity may not use is hidden from tools/list.
+_defaults:
+  kongctl:
+    namespace: gnb-demo
+ai_gateway_mcp_servers:
+  - ref: card-services-mcp
+    ai_gateway: !lookup {id: !env AI_GATEWAY_ID}
+    name: card-services-mcp
+    display_name: Card services (MCP tools)
+    type: conversion-listener
+    policies: [mcp-rate-limit]                 # 120 calls a minute per identity (50-policies.yaml)
+    config:
+      url: http://card-services:8080
+      route: {paths: ["/mcp/card-services"]}
+      logging: {payloads: false, audits: true}
+    access:
+      acl_attribute_type: consumer                             # ACLs are evaluated on the caller's consumer groups
+      auth_strategies: [!ref gnb-key-auth#name]
+      acls: {allow: [card-ops-agent, card-ops-supervisor]}     # server-level gate: no other use case can even connect
+      default_tool_acls: {allow: [card-ops-supervisor]}        # anything not listed below: supervisors only
+    tools:
+      - name: get_card_status
+        description: Get the current status of a customer's card by the card's last 4 digits.
+        method: GET
+        path: /cards/{card_id}/status
+        parameters:
+          - {name: card_id, in: path, required: true, description: Last 4 digits of the card, schema: {type: string}}
+        annotations: {read_only_hint: true}
+        access: {acls: {allow: [card-ops-agent, card-ops-supervisor]}}
+      - name: get_kyc_status
+        description: Get the KYC verification status of a customer by customer ID (for example CUST-1001).
+        method: GET
+        path: /customers/{customer_id}/kyc
+        parameters:
+          - {name: customer_id, in: path, required: true, description: Customer ID such as CUST-1001, schema: {type: string}}
+        annotations: {read_only_hint: true}
+        access: {acls: {allow: [card-ops-agent, card-ops-supervisor]}}
+      - name: escalate_to_supervisor
+        description: Open a case for a card-ops supervisor when an action is needed that you are not allowed to perform yourself.
+        method: POST
+        path: /cases
+        parameters:
+          - {name: card_id, in: query, required: true, description: Last 4 digits of the card, schema: {type: string}}
+          - {name: customer_id, in: query, required: true, description: Customer ID such as CUST-1001, schema: {type: string}}
+          - {name: reason, in: query, required: true, description: Why a supervisor is needed, schema: {type: string}}
+        access: {acls: {allow: [card-ops-agent, card-ops-supervisor]}}
+      - name: block_card
+        description: Block a customer's card immediately. Destructive action.
+        method: POST
+        path: /cards/{card_id}/block
+        parameters:
+          - {name: card_id, in: path, required: true, description: Last 4 digits of the card, schema: {type: string}}
+        annotations: {destructive_hint: true}
+        access: {acls: {allow: [card-ops-supervisor]}}               # the agent's group never sees it

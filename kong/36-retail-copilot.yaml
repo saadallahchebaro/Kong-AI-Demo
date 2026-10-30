@@ -1,0 +1,13 @@
+# The retail copilot use case. Act 2 live edit: swap the two policies lines
+# (select both, Cmd+/) to attach GNB's regulated bundle, reviewed once, reused by every use case.
+_defaults:
+  kongctl:
+    namespace: gnb-demo
+ai_gateway_consumer_groups:
+  - ref: retail-copilot
+    ai_gateway: !lookup {id: !env AI_GATEWAY_ID}
+    name: retail-copilot
+    display_name: Retail copilot
+    consumers: [aisha]
+    policies: []
+    # policies: [injection-guard, pii-redact, advice-guard, response-guard]   # GNB regulated bundle (Act 2 live edit)

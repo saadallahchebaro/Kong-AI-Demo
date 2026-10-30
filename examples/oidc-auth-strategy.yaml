@@ -1,0 +1,28 @@
+# EXAMPLE ONLY, never applied (scripts apply kong/ and onboard/, not examples/).
+# Shown for "Why API keys and not our IdP?": in production the AI Auth Strategy is OpenID Connect against
+# GNB's IdP, and the token's groups claim selects the same AI Consumer Groups the demo uses (retail-copilot,
+# card-ops-agent, ...), so the policies, budgets and analytics attached to those groups don't change.
+# Fields follow Kong's documented kongctl example (developer.konghq.com/ai-gateway/entities/ai-auth-strategy/)
+# and `kongctl explain ai_gateway_auth_strategy` (issuer and cache_tokens_salt are required).
+_defaults:
+  kongctl:
+    namespace: gnb-demo
+ai_gateway_auth_strategies:
+  - ref: gnb-oidc
+    ai_gateway: !lookup {id: !env AI_GATEWAY_ID}
+    name: gnb-oidc
+    display_name: GNB identity provider (OIDC)
+    type: openid-connect
+    config:
+      issuer: https://idp.gnb.example/realms/gnb          # placeholder: GNB's IdP (Entra ID, Keycloak, Ping, ...)
+      client_id:
+        - gnb-ai-gateway
+      client_secret:
+        - "{vault://gnb-env/oidc-client-secret}"          # from the vault, never in Git or Konnect
+      auth_methods:
+        - bearer                                          # apps and agents send their access token
+      scopes:
+        - openid
+      consumer_groups_claim:
+        - groups                                          # the token's "groups" claim -> AI Consumer Groups
+      cache_tokens_salt: gnb-oidc-cache-salt

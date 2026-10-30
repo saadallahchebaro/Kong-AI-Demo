@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# kongctl wrapper: loads .env and targets the Konnect region set in .env (default eu).
+set -euo pipefail
+cd "$(dirname "$0")/.."
+set -a; . ./.env; [ -f ./.env.demo-keys ] && . ./.env.demo-keys; set +a
+exec kongctl "$@" --pat "$KONNECT_TOKEN" --region "${KONGCTL_DEFAULT_KONNECT_REGION:-eu}"

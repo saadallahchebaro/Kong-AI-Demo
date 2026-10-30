@@ -1,0 +1,20 @@
+# secrets and generated credentials (setup.sh and up.sh write them; never commit)
+.env
+.env.*
+!.env.example
+certs/
+3-cli-ui-webui/webui/.personas.env
+3-cli-ui-webui/webui/.login.js
+
+# runtime state, logs and generated pages
+run/
+recordings/
+arch/gnb-architecture.html
+arch/artifact.html
+/GNB demo.app/
+
+# local tooling / OS noise
+.DS_Store
+__pycache__/
+*.pyc
+.venv/

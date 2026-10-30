@@ -1,0 +1,33 @@
+/* GNB Assist: GNB's palette on Open WebUI v0.11.4 (deep green, gold, warm paper). Loaded from /static/custom.css.
+   Selectors target this pinned version's markup; re-check them if the image changes. */
+:root {
+  --gnb-green: #0F5A44;
+  --gnb-green-dark: #08372A;
+  --gnb-gold: #C8A24A;
+  --gnb-mint: #E9F1EC;
+  --gnb-note: #F3F7F4;
+}
+
+/* what the GNB AI Gateway did, under each answer (the pipe's status line) */
+.chat-assistant .status-description {
+  border-left: 3px solid var(--gnb-gold);
+  background: var(--gnb-note);
+  border-radius: 0 8px 8px 0;
+  padding: 3px 10px !important;
+  margin: 4px 0 8px;
+  width: auto !important;
+  display: inline-flex !important;
+}
+.chat-assistant .status-description div { color: #2F6A55 !important; font-size: 0.84rem !important; letter-spacing: 0.01em; }
+
+/* the employee's own messages */
+.chat-user [class*="rounded-3xl"][class*="bg-gray-50"] { background: var(--gnb-mint) !important; color: #0B3B2D; }
+
+/* send button, when there's something to send */
+#send-message-button:not(:disabled) { background: var(--gnb-green) !important; color: #fff !important; }
+
+/* the internal-use banner: GNB gold instead of the blue "info" badge */
+[class*="bg-blue-500/20"] { background: rgba(200, 162, 74, 0.2) !important; color: #6F5212 !important; }
+
+/* suggestions and links in GNB green */
+.chat-assistant a, .markdown-prose a { color: var(--gnb-green) !important; }

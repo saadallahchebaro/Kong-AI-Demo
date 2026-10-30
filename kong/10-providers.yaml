@@ -1,0 +1,38 @@
+# AI Model Providers: the two GPU serving nodes of GNB's AI factory (Ollama behind node endpoints).
+_defaults:
+  kongctl:
+    namespace: gnb-demo
+ai_gateway_model_providers:
+  - ref: gnb-factory-dc1
+    ai_gateway: !lookup {id: !env AI_GATEWAY_ID}
+    name: gnb-factory-dc1
+    display_name: GNB AI factory - DC1 (primary)
+    type: ollama
+    config:
+      auth:
+        type: basic
+        headers:
+          - name: X-GNB-Node             # Ollama needs no key; the schema requires one header, sent as a secret
+            value: !secret {source: !env GNB_NODE_DC1}
+  - ref: gnb-factory-dc2
+    ai_gateway: !lookup {id: !env AI_GATEWAY_ID}
+    name: gnb-factory-dc2
+    display_name: GNB AI factory - DC2 (DR)
+    type: ollama
+    config:
+      auth:
+        type: basic
+        headers:
+          - name: X-GNB-Node
+            value: !secret {source: !env GNB_NODE_DC2}
+  - ref: openai-cloud
+    ai_gateway: !lookup {id: !env AI_GATEWAY_ID}
+    name: openai-cloud
+    display_name: OpenAI (cloud) - agent model only
+    type: openai
+    config:
+      auth:
+        type: basic
+        headers:
+          - name: Authorization
+            value: "{vault://gnb-env/openai-bearer}"   # resolved on the data plane: KONG_GNB_OPENAI_BEARER

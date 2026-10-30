@@ -1,0 +1,53 @@
+openapi: 3.0.3
+info:
+  title: GNB card services (mock, fake data)
+  version: 1.0.0
+  description: The bank API the card-ops agent's MCP tools are mapped from (kong/60-mcp.yaml).
+servers:
+  - url: http://card-services:8080
+paths:
+  /cards/{card_id}/status:
+    get:
+      operationId: get_card_status
+      summary: Get the current status of a customer's card
+      parameters:
+        - {name: card_id, in: path, required: true, description: Last 4 digits of the card, schema: {type: string}}
+      responses:
+        "200": {description: Card status}
+        "404": {description: Card not found}
+  /customers/{customer_id}/kyc:
+    get:
+      operationId: get_kyc_status
+      summary: Get the KYC verification status of a customer
+      parameters:
+        - {name: customer_id, in: path, required: true, description: Customer ID such as CUST-1001, schema: {type: string}}
+      responses:
+        "200": {description: KYC status}
+        "404": {description: Customer not found}
+  /cards/{card_id}/block:
+    post:
+      operationId: block_card
+      summary: Block a customer's card (destructive)
+      parameters:
+        - {name: card_id, in: path, required: true, description: Last 4 digits of the card, schema: {type: string}}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: {type: string, description: Why the card is being blocked}
+      responses:
+        "200": {description: Card blocked}
+        "404": {description: Card not found}
+  /cases:
+    post:
+      operationId: escalate_to_supervisor
+      summary: Open a case in the card-ops supervisor queue
+      parameters:
+        - {name: card_id, in: query, required: true, description: Last 4 digits of the card, schema: {type: string}}
+        - {name: customer_id, in: query, required: true, description: Customer ID such as CUST-1001, schema: {type: string}}
+        - {name: reason, in: query, required: true, description: Why a supervisor is needed, schema: {type: string}}
+      responses:
+        "201": {description: Case opened}

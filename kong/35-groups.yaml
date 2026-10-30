@@ -1,0 +1,30 @@
+# AI Consumer Groups: one per use case. Policies, budgets and Analytics key off these.
+_defaults:
+  kongctl:
+    namespace: gnb-demo
+ai_gateway_consumer_groups:
+  - ref: aml-summaries
+    ai_gateway: !lookup {id: !env AI_GATEWAY_ID}
+    name: aml-summaries
+    display_name: AML summaries
+    consumers: [layla]
+  - ref: card-ops-agent
+    ai_gateway: !lookup {id: !env AI_GATEWAY_ID}
+    name: card-ops-agent
+    display_name: Card-ops agent
+    consumers: [card-ops-agent-01]
+  - ref: card-ops-supervisor
+    ai_gateway: !lookup {id: !env AI_GATEWAY_ID}
+    name: card-ops-supervisor
+    display_name: Card-ops supervisor
+    consumers: [khalid]
+  - ref: credit-memo
+    ai_gateway: !lookup {id: !env AI_GATEWAY_ID}
+    name: credit-memo
+    display_name: Credit memo
+    consumers: [credit-memo-app]
+  - ref: knowledge-assistant
+    ai_gateway: !lookup {id: !env AI_GATEWAY_ID}
+    name: knowledge-assistant
+    display_name: Knowledge assistant
+    consumers: [knowledge-assistant-app]

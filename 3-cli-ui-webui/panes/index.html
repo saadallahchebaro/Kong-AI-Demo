@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>GNB AI · live</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+/* Live panes beside GNB Assist: DC1 and DC2 (what each model received) and the GNB AI Gateway (what Kong decided).
+   Same look as scenario 3's video. The Run tab holds the run of show's shortcuts and streams each script's output.
+   Keys: t switches Live / Run; on Live, c clears the panes and r switches between a column and a row layout. */
+:root { --ink: #001408; --green: #4A8500; --lime: #CCFF00; --panel: #F3F5F0; --ink2: #4B5650; --line: #D3D9CC; --red: #C8553D;
+  --mono: Menlo, "SF Mono", Monaco, monospace; }
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--panel); font-family: -apple-system, "Segoe UI", Calibri, sans-serif; color: var(--ink); }
+body { display: flex; flex-direction: column; padding: 10px; gap: 10px; }
+header { display: flex; align-items: center; gap: 8px; font-size: 14px; flex-wrap: wrap; }
+nav { display: flex; gap: 4px; margin-right: auto; background: #E4E9DF; border-radius: 99px; padding: 3px; }
+nav button { border: 0; background: none; font: 600 13px -apple-system, "Segoe UI", sans-serif; padding: 4px 14px; border-radius: 99px; color: var(--ink2); cursor: pointer; }
+nav button.on { background: var(--ink); color: var(--lime); }
+nav .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-left: 6px; vertical-align: 1px; background: transparent; }
+nav .dot.busy { background: #F2C230; animation: blink 1s infinite; } nav .dot.ok { background: #7BC043; } nav .dot.bad { background: var(--red); }
+@keyframes blink { 50% { opacity: .35; } }
+.ttl { display: none; font-size: 15px; margin-right: auto; }
+body.live-only nav { display: none; } body.live-only .ttl { display: block; }   /* ?live: the shared screen's window, no Run tab */
+.chip { padding: 3px 10px; border-radius: 99px; background: #fff; border: 1px solid var(--line); font-size: 12px; font-weight: 600; }
+.chip.ok { color: var(--green); } .chip.bad { color: #fff; background: var(--red); border-color: var(--red); }
+.stage { flex: 1; position: relative; min-height: 0; }
+.layer { position: absolute; inset: 0; } .layer.off { visibility: hidden; }
+main { display: grid; gap: 10px; grid-template-rows: 1fr 1fr 1.6fr; }
+body.row main { grid-template-rows: none; grid-template-columns: 1fr 1fr 1.4fr; }
+.pane { border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; min-height: 0; }
+.node { background: #fff; border: 2px solid var(--line); }
+.node.on { border-color: var(--green); box-shadow: 0 0 0 3px rgba(204, 255, 0, .9); }
+.node.down { background: #F6E9E5; border-color: var(--red); }
+.pane h3 { margin: 0; padding: 8px 12px; font-size: 16px; display: flex; align-items: baseline; gap: 8px; border-bottom: 1px solid var(--line); }
+.pane h3 small { font-size: 12px; color: var(--ink2); font-weight: 400; }
+.pane h3 .st { margin-left: auto; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 99px; background: var(--panel); color: var(--green); }
+.node.down h3 .st { background: var(--red); color: #fff; }
+.list { flex: 1; overflow: hidden; display: flex; flex-direction: column; padding: 8px 10px; gap: 6px; font: 12.5px/1.45 var(--mono); }
+.e { border-radius: 6px; padding: 4px 6px; flex: none; }
+.list > .e:first-child { margin-top: auto; }  /* newest at the bottom; overflow counts in scrollHeight, so trimming works */
+.e.new { background: rgba(204, 255, 0, .38); }
+.e .t { color: #8C968E; font-size: 11.5px; } .e .in { white-space: pre-wrap; word-break: break-word; } .e .out { color: var(--ink2); white-space: pre-wrap; word-break: break-word; }
+.pii { background: #FFD9CF; color: #8A2A14; border-radius: 3px; } .ph { background: var(--lime); border-radius: 3px; }
+.kong { background: var(--ink); color: #DDE7DA; }
+.kong h3 { color: var(--lime); border-bottom-color: #1E3326; } .kong h3 small { color: #9FB09A; } .kong h3 .st { background: #0F2418; color: var(--lime); }
+.kong .e { background: #0F2418; } .kong .e.new { background: rgba(204, 255, 0, .2); box-shadow: inset 4px 0 0 var(--lime); }
+.kong .who { color: #9FB09A; }
+.kong .list { font-size: 12px; gap: 5px; } .ok { color: #9BE564; } .no { color: #FF8A73; } .hit { color: var(--lime); }
+.empty { color: #9AA59C; font: 12px var(--mono); text-align: center; margin: auto; }
+.kong .empty { color: #5E7462; }
+#run { display: grid; gap: 8px; grid-template-rows: minmax(0, 1fr) minmax(120px, 24vh); }
+/* the runbook: one column per act, numbered steps; the current step is lime, done steps fade */
+.acts { overflow: auto; display: grid; grid-template-columns: repeat(var(--units, 11), minmax(0, 1fr)); gap: 7px; align-content: start; align-items: start; }
+@media (max-width: 1900px) { .acts { grid-template-columns: repeat(5, minmax(0, 1fr)); } }   /* the laptop: two rows of acts */
+@media (max-width: 1100px) { .acts { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.act { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 6px 6px 7px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.act.cur { border-color: var(--green); }
+.act.wide { grid-column: span 2; } .act.wide .steps { columns: 2; column-gap: 6px; }   /* the long acts: two sub-columns */
+.step { break-inside: avoid; }
+.act h4 { display: flex; gap: 6px; align-items: baseline; margin: 0 2px 3px; font-size: 11px; letter-spacing: .04em; text-transform: uppercase; color: var(--ink); }
+.act h4 .an { background: var(--ink); color: var(--lime); border-radius: 5px; padding: 0 5px; font: 700 11px var(--mono); }
+.act h4 .mins { margin-left: auto; color: var(--ink2); font-weight: 400; letter-spacing: 0; }
+.step { display: grid; grid-template-columns: 27px minmax(0, 1fr); gap: 3px; padding: 3px 3px 4px; border-radius: 7px; }
+.step .num { font: 700 10.5px var(--mono); color: var(--ink2); cursor: pointer; padding-top: 5px; user-select: none; }
+.step.cur { background: rgba(204, 255, 0, .42); box-shadow: inset 3px 0 0 var(--green); }
+.step.done { opacity: .5; } .step.done .num { color: var(--green); }
+.step.done .num::after { content: " ✓"; }
+.step button { font: 600 11.5px -apple-system, "Segoe UI", sans-serif; border-radius: 6px; padding: 3px 7px; cursor: pointer; text-align: left;
+  border: 1px solid var(--green); background: var(--green); color: #fff; max-width: 100%; }
+.step button.link { background: #fff; color: var(--green); border-color: var(--line); font-weight: 500; }
+.step button.link::after { content: " ↗"; }
+.step button.chat { background: #fff; color: var(--ink); border-color: #AFC0A3; }
+.step button.chat::before { content: "💬 "; }
+.step button.stop { background: #fff; color: var(--red); border-color: #E8B9AD; }
+.step button.ok-mark::after { content: " ✓"; }
+.step button.failed { background: var(--red); border-color: var(--red); color: #fff; }
+.step button:disabled { opacity: .45; cursor: default; }
+.say { display: flex; gap: 4px; align-items: flex-start; margin-top: 3px; font-size: 11.5px; line-height: 1.3; }
+.say q { flex: 1; min-width: 0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: var(--ink); }
+.say button.copy { flex: none; padding: 0 6px; font-size: 10.5px; font-weight: 600; background: #fff; color: var(--green); border-color: var(--line); }
+.say.copied button.copy { background: var(--green); color: #fff; border-color: var(--green); }
+.exp, .note { font-size: 10.8px; color: var(--ink2); margin-top: 2px; line-height: 1.25; }
+.exp::before { content: "→ "; color: var(--green); }
+.wins { margin: 4px 2px 0; padding-top: 5px; border-top: 1px dashed var(--line); display: flex; flex-wrap: wrap; gap: 4px; align-items: center; font-size: 10.5px; color: var(--ink2); }
+.wins button { font: 600 11px -apple-system, sans-serif; border: 1px solid var(--line); background: #fff; border-radius: 6px; padding: 1px 6px; cursor: pointer; }
+.wins button.failed { background: var(--red); color: #fff; }
+/* the stage strip: an act script's output on the shared screen, over the lower panes, while it runs and a while after */
+#stage-out { position: absolute; left: 0; right: 0; bottom: 0; height: calc((100% - 20px) * 1.6 / 3.6); z-index: 5; display: none; flex-direction: column;
+  background: var(--ink); border-radius: 12px; box-shadow: 0 -8px 28px rgba(0, 20, 8, .35); }   /* exactly over the Kong pane, so DC2 stays fully visible */
+body.row #stage-out { height: 47%; }
+#stage-out.on { display: flex; }
+#stage-out .h { display: flex; gap: 8px; align-items: baseline; padding: 7px 12px; border-bottom: 1px solid #1E3326; color: var(--lime); font-size: 14px; }
+#stage-out .h small { color: #9FB09A; font: 11.5px var(--mono); } #stage-out .h span { margin-left: auto; color: #9FB09A; font: 600 11px -apple-system, sans-serif; }
+#stage-out pre { flex: 1; margin: 0; padding: 8px 12px; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end;
+  color: #DDE7DA; font: 11.5px/1.45 var(--mono); white-space: pre-wrap; word-break: break-word; }
+#offline { display: none; margin: 0; padding: 8px 12px; border-radius: 10px; background: #F6E9E5; color: #8A2A14; font-size: 13px; }
+body.offline #offline { display: block; }
+.console { background: var(--ink); border-radius: 12px; display: flex; flex-direction: column; min-height: 0; }
+.console .ch { display: flex; gap: 8px; align-items: baseline; padding: 7px 12px; border-bottom: 1px solid #1E3326; color: var(--lime); font-size: 14px; }
+.console .ch small { color: #9FB09A; font: 11.5px var(--mono); } .console .ch span { margin-left: auto; font: 600 11px -apple-system, sans-serif; color: #9FB09A; }
+#out { flex: 1; margin: 0; padding: 8px 12px; overflow: auto; color: #DDE7DA; font: 11.5px/1.45 var(--mono); white-space: pre-wrap; word-break: break-word; }
+.a-b { font-weight: 700; } .a-d { opacity: .6; } .a-r { color: #FF8A73; } .a-g { color: #9BE564; } .a-y { color: #F2D16B; }
+.a-b.a-k, .a-k { color: #8C968E; } .a-u { color: #8FB8FF; } .a-m { color: #E39BE8; } .a-c { color: #7FD8D1; } .a-w { color: #fff; }
+</style></head>
+<body>
+<header><b class="ttl">GNB AI · live</b><nav><button data-tab="live" class="on">Live</button><button data-tab="run">Run<i class="dot" id="s-run"></i></button></nav><span class="chip" id="s-dc1">DC1</span><span class="chip" id="s-dc2">DC2</span><span class="chip" id="s-kc">Konnect link</span></header>
+<p id="offline">The demo's server isn't running. Double-click <b>GNB demo</b> in the main folder to start it.</p>
+<div class="stage">
+<main class="layer" id="live">
+  <section class="pane node" id="dc1"><h3>DC1 <small>primary site</small><span class="st">IDLE</span></h3><div class="list"><div class="empty">what the DC1 model receives</div></div></section>
+  <section class="pane node" id="dc2"><h3>DC2 <small>DR site</small><span class="st">IDLE</span></h3><div class="list"><div class="empty">what the DC2 model receives</div></div></section>
+  <section class="pane kong" id="kong"><h3>GNB AI Gateway <small>what Kong decided</small><span class="st">LIVE</span></h3><div class="list"><div class="empty">every call, as Kong logs it</div></div></section>
+</main>
+<div id="stage-out"><div class="h"><b id="so-title"></b><small id="so-cmd"></small><span id="so-state"></span></div><pre id="so-out"></pre></div>
+<section class="layer off" id="run">
+  <div class="acts" id="acts"></div>
+  <div class="console"><div class="ch"><b id="run-title">Output</b><small id="run-cmd"></small><span id="run-state">pick a shortcut</span></div><pre id="out"></pre></div>
+</section>
+</div>
+<script>
+const esc = s => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const pii = s => esc(s).replace(/(PLACEHOLDER\d+)/g, '<span class="ph">$1</span>').replace(/(784-\d{4}-\d{7}-\d|Ahmed Al Mansoori)/g, '<span class="pii">$1</span>');
+const FRESH = 2500;
+let since = null, lastNode = { dc1: 0, dc2: 0 }, BOOTED = null, FAILS = 0;
+try { if (localStorage.getItem("panes-row") === "1") document.body.classList.add("row"); } catch {}
+
+function push(id, html) {
+  const list = document.querySelector(`#${id} .list`); list.querySelector(".empty")?.remove();
+  const d = document.createElement("div"); d.className = "e new"; d.innerHTML = html; d.dataset.at = Date.now(); list.append(d);
+  while (list.children.length > 1 && list.scrollHeight > list.clientHeight) list.firstChild.remove();  // whole entries only
+}
+function kongHtml(e) {
+  const eu = String(e.end_user || "").replace(/@.*/, ""), forWho = eu && !eu.startsWith(e.consumer || "\u0000") ? " · for " + esc(eu) : "";  // shown when an agent or app acts for someone
+  const who = `<div class="who">${esc(e.time)} · ${esc(e.consumer || "anonymous")}${e.use_case ? " · " + esc(e.use_case) : ""}${forWho}</div>`;
+  if (e.mcp === "tools/list") return who + `🔧 tools/list · <span class="hit">only the tools ${esc(e.acl || "this consumer")} may use</span>`;
+  if (e.mcp) return who + `🔧 ${esc(e.mcp)} <span class="${e.decision === "ALLOW" ? "ok" : "no"}">${esc(e.decision)}</span>`;
+  const bits = [];
+  if (e.status === 200) {
+    bits.push(`<span class="ok">200</span> ${esc(e.model || "")}`);
+    if ((e.cache || "").toLowerCase() === "hit") bits.push('<span class="hit">answered from cache</span>');
+    else if (e.tokens != null) bits.push(`${e.tokens} tok · $${Number(e.cost || 0).toFixed(6)}`);
+  } else bits.push(`<span class="no">${e.status}</span> ${esc(e.verdict)}`);
+  // PII only where it mattered: the call reached a model (a blocked prompt never did). In one long chat, every call carries the
+  // whole history, so an earlier message's PII is redacted again on each call: new chats per step keep this to the complaint.
+  if (e.pii && e.model) bits.push('<span class="hit">PII redacted</span>');
+  if (e.budget && e.budget["600"] != null) bits.push(`budget ${Number(e.budget["600"]).toLocaleString()} (10 min)`);
+  else if (e.budget && e.budget.day != null) bits.push(`budget ${Number(e.budget.day).toLocaleString()} today`);
+  return who + bits.join(" · ");
+}
+function status(st) {
+  const set = (id, ok, label) => { const c = document.getElementById(id); c.textContent = label; c.className = "chip " + (ok === false ? "bad" : ok ? "ok" : ""); };
+  set("s-dc1", st.dc1, st.dc1 === false ? "DC1 down" : "DC1 up"); set("s-dc2", st.dc2, st.dc2 === false ? "DC2 down" : "DC2 up");
+  set("s-kc", st.konnect, st.konnect === false ? "Konnect link cut" : st.konnect ? "Konnect connected" : "Konnect …");
+  for (const n of ["dc1", "dc2"]) document.getElementById(n).classList.toggle("down", st[n] === false);
+}
+function tick() {
+  const now = Date.now();
+  for (const n of ["dc1", "dc2"]) {
+    const p = document.getElementById(n), on = now - lastNode[n] < FRESH && !p.classList.contains("down");
+    p.classList.toggle("on", on); p.querySelector(".st").textContent = p.classList.contains("down") ? "DOWN" : on ? "RECEIVING" : "IDLE";
+  }
+  for (const e of document.querySelectorAll(".e.new")) if (now - e.dataset.at > FRESH) e.classList.remove("new");
+}
+async function poll() {
+  try {
+    const r = await fetch(`/events?since=${since ?? 0}`, { cache: "no-store" }); const j = await r.json();
+    status(j.status || {}); await runState(j.run, j.quick);
+    if (BOOTED && j.boot !== BOOTED) {  // the panes server restarted: the Run tab reloads (new token); the Live view takes what it has seen since
+      if (!document.body.classList.contains("live-only")) return location.reload();
+      since = 0;
+    }
+    BOOTED = j.boot;
+    if (since === null) since = j.seq;  // start empty: only what happens from now on
+    else for (const e of j.events) {
+      if (STAGE.doneAt) STAGE.hide = true;   // the next call after a script: the panes take the stage again
+      if (e.kind === "node") { lastNode[e.node] = Date.now(); push(e.node, `<span class="t">${esc(e.time)} · ${esc(e.model)}</span><br><span class="in">IN : ${pii(e.prompt)}</span><br><span class="out">OUT: ${pii(e.answer)}</span>`); }
+      else push("kong", kongHtml(e));
+      since = Math.max(since, e.seq);
+    }
+    document.body.classList.remove("offline"); FAILS = 0;
+  } catch { if (++FAILS >= 2) document.body.classList.add("offline"); }   // two misses in a row: the server is down
+  setTimeout(poll, 300);
+}
+document.addEventListener("keydown", ev => {
+  if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
+  if (ev.key === "t" && !document.body.classList.contains("live-only")) return tab(document.getElementById("live").classList.contains("off") ? "live" : "run");
+  if (document.getElementById("live").classList.contains("off")) return;
+  if (ev.key === "c") document.querySelectorAll(".list").forEach(l => l.innerHTML = "");
+  if (ev.key === "r") { document.body.classList.toggle("row"); try { localStorage.setItem("panes-row", document.body.classList.contains("row") ? "1" : "0"); } catch {} }
+});
+
+// ── Run tab: the run of show's shortcuts (the server holds the list and runs only those) ──
+const TOKEN = "__PANES_TOKEN__";
+let CFG = null, view = { id: null, from: 0 }, lastQuick = 0, busy = false;
+const ANSI = ["k", "r", "g", "y", "u", "m", "c", "w"];
+function ansi(s) {  // the scripts' colours (SGR codes) as spans; other escapes dropped
+  let st = { b: 0, d: 0, c: "" }, html = "", last = 0, m; const re = /\x1b\[([0-9;?]*)([A-Za-z])/g;
+  const emit = t => { if (!t) return; const c = [st.b && "a-b", st.d && "a-d", st.c && "a-" + st.c].filter(Boolean).join(" "); html += c ? `<span class="${c}">${esc(t)}</span>` : esc(t); };
+  while ((m = re.exec(s))) {
+    emit(s.slice(last, m.index)); last = re.lastIndex;
+    if (m[2] !== "m") continue;
+    for (const n of (m[1] || "0").split(";").map(Number))
+      if (n === 0) st = { b: 0, d: 0, c: "" }; else if (n === 1) st.b = 1; else if (n === 2) st.d = 1; else if (n === 22) st.b = st.d = 0;
+      else if (n >= 30 && n <= 37) st.c = ANSI[n - 30]; else if (n >= 90 && n <= 97) st.c = ANSI[n - 90]; else if (n === 39) st.c = "";
+  }
+  emit(s.slice(last)); return html;
+}
+function tab(name) {
+  for (const id of ["live", "run"]) document.getElementById(id).classList.toggle("off", id !== name);
+  document.querySelectorAll("nav button").forEach(b => b.classList.toggle("on", b.dataset.tab === name));
+}
+document.querySelector("nav").addEventListener("click", ev => { const b = ev.target.closest("button[data-tab]"); if (b) tab(b.dataset.tab); });
+
+let DONE = new Set(), RUNSTEP = {}, QSTEP = {}, COPIED = {};   // done steps (kept in this browser), which step started a run / quick action
+try { DONE = new Set(JSON.parse(localStorage.getItem("runbook-done") || "[]")); COPIED = JSON.parse(localStorage.getItem("runbook-copied") || "{}"); } catch {}
+const save = () => { try { localStorage.setItem("runbook-done", JSON.stringify([...DONE])); localStorage.setItem("runbook-copied", JSON.stringify(COPIED)); } catch {} };
+function stepHtml(st) {
+  const n = `<span class="num" title="click to tick or untick">${esc(st.n)}</span>`;
+  let body = "";
+  if (st.do === "run") body = `<button class="run${st.id === "shutdown" ? " stop" : ""}" data-id="${esc(st.id)}">${esc(CFG.actions[st.id])}</button>`;
+  else if (st.do === "link") body = `<button class="link" data-id="link:${esc(st.id)}">${esc(st.label || "Konnect · " + CFG.links[st.id])}</button>`;
+  else if (st.do === "win") body = `<button class="link" data-id="${esc(st.id)}">${esc(CFG.actions[st.id])}</button>`;
+  else if (st.do === "chat") body = `<button class="chat" data-id="${esc(st.id)}" title="${esc(st.who)}'s window, a new chat with ${esc(st.assistant)}">New chat · ${esc(st.who)} · ${esc(st.assistant)}</button>`
+    + st.say.map((m, i) => `<div class="say${COPIED[st.n + ":" + i] ? " copied" : ""}" data-k="${esc(st.n)}:${i}"><q title="${esc(m)}">${esc(m)}</q><button class="copy" data-copy="${esc(st.n)}:${i}">copy</button></div>`).join("");
+  if (st.expect) body += `<div class="exp">${esc(st.expect)}</div>`;
+  if (st.note) body += `<div class="note">${esc(st.note)}</div>`;
+  return `<div class="step" data-n="${esc(st.n)}">${n}<div>${body}</div></div>`;
+}
+async function loadConfig() {
+  CFG = await (await fetch("/config", { cache: "no-store" })).json();
+  window.SAY = {}; for (const [, , steps] of CFG.runbook) for (const st of steps) if (st.say) st.say.forEach((m, i) => SAY[st.n + ":" + i] = m);
+  document.getElementById("acts").innerHTML = CFG.runbook.map(([title, mins, steps], a) => `<div class="act${steps.length >= 7 ? " wide" : ""}" data-a="${a}"><h4><span class="an">${a}</span>${esc(title)}${mins ? `<span class="mins">${esc(mins)}</span>` : ""}</h4>`
+    + `<div class="steps">${steps.map(stepHtml).join("")}</div>`
+    + (a === 0 ? `<div class="wins">windows: ${["aisha", "layla", "omar", "noura", "khalid"].map(w => `<button data-id="as-${w}">${w[0].toUpperCase() + w.slice(1)}</button>`).join("")}</div>` : "") + `</div>`).join("");
+  // one grid unit per act, two for the long ones (on the wide screen; narrower screens use fixed columns)
+  document.getElementById("acts").style.setProperty("--units", CFG.runbook.reduce((n, [, , st]) => n + (st.length >= 7 ? 2 : 1), 0));
+  for (const [action, code] of CFG.history) mark(action, code);
+  paint();
+}
+function paint() {  // done steps fade; the first step not done is the current one (lime), and its act is outlined
+  let cur = null;
+  document.querySelectorAll(".step").forEach(el => { const d = DONE.has(el.dataset.n); el.classList.toggle("done", d); el.classList.remove("cur"); if (!d && !cur) cur = el; });
+  cur?.classList.add("cur");
+  cur?.scrollIntoView({ block: "nearest", behavior: "smooth" });   // on a smaller screen the current step stays in view
+  document.querySelectorAll(".act").forEach(a => a.classList.toggle("cur", !!cur && a.contains(cur)));
+}
+function setDone(n, on = true) { if (!n) return; on ? DONE.add(n) : DONE.delete(n); save(); paint(); }
+function mark(action, code) {  // a script's button: ✓ or red; a successful reset starts the runbook again
+  if (action === "reset" && code === 0) { DONE.clear(); COPIED = {}; save(); document.querySelectorAll(".say.copied").forEach(x => x.classList.remove("copied"));
+    document.querySelectorAll("button.ok-mark, button.failed").forEach(x => x.classList.remove("ok-mark", "failed")); }
+  document.querySelectorAll(`button[data-id="${action}"]`).forEach(x => { x.classList.toggle("ok-mark", code === 0); x.classList.toggle("failed", code !== 0); });
+}
+async function copyText(t) {
+  try { await navigator.clipboard.writeText(t); return true; } catch {
+    const ta = Object.assign(document.createElement("textarea"), { value: t }); document.body.append(ta); ta.select();
+    const ok = document.execCommand("copy"); ta.remove(); return ok;
+  }
+}
+document.getElementById("acts").addEventListener("click", async ev => {
+  const num = ev.target.closest(".num");
+  if (num) { const n = num.closest(".step").dataset.n; return setDone(n, !DONE.has(n)); }
+  const cp = ev.target.closest("button[data-copy]");
+  if (cp) {  // copy what to type; when every message of a step is copied, the step is done
+    if (!(await copyText(SAY[cp.dataset.copy]))) return;
+    COPIED[cp.dataset.copy] = 1; cp.closest(".say").classList.add("copied"); cp.textContent = "copied"; setTimeout(() => cp.textContent = "copy", 1200);
+    const step = cp.closest(".step"); if ([...step.querySelectorAll(".say")].every(x => x.classList.contains("copied"))) setDone(step.dataset.n); else save();
+    return;
+  }
+  const b = ev.target.closest("button[data-id]"); if (!b || b.disabled) return;
+  const id = b.dataset.id, n = b.closest(".step")?.dataset.n;
+  if (id === "shutdown" && !confirm("Shut the demo down?\n\nCloses the stage windows and stops GNB Assist, the Docker stack, the factory and this page's server. Nothing is deleted.")) return;
+  if (id === "reset" && !confirm("Reset to baseline?\n\nBundle off, 13th use case removed, budgets and cache cleared, card 4242 active, every persona's chat cleared. The runbook starts again.")) return;
+  const r = await fetch("/run", { method: "POST", headers: { "Content-Type": "application/json", "X-Panes-Token": TOKEN }, body: JSON.stringify({ id }) });
+  if (r.status === 403) return location.reload();   // the panes server restarted before the page noticed: reload, then click again
+  const j = await r.json().catch(() => ({}));
+  if (r.status === 409) { document.getElementById("run-state").textContent = j.error; return; }
+  if (j.run) RUNSTEP[j.run] = n; else QSTEP[id] = n;   // a script: done when it ends well; a window or Konnect page: when it's up
+});
+const PRIVATE = ["start", "preflight", "reset", "shutdown"];   // before and after the session: never on the shared screen
+const STAGE = { id: null, doneAt: 0, hide: false };
+function stageStrip(run) {  // an act script seen running here: its output on the stage, until the next call or 90 s after it ends
+  const el = document.getElementById("stage-out");
+  if (!run || PRIVATE.includes(run.action) || run.action.startsWith("chat:")) { el.classList.remove("on"); return; }
+  if (!run.done && STAGE.id !== run.id) Object.assign(STAGE, { id: run.id, doneAt: 0, hide: false });
+  if (STAGE.id !== run.id) { el.classList.remove("on"); return; }   // finished before this page saw it run
+  if (run.done && !STAGE.doneAt) STAGE.doneAt = Date.now();
+  const show = !STAGE.hide && (!run.done || Date.now() - STAGE.doneAt < 90000) && !document.getElementById("live").classList.contains("off");
+  el.classList.toggle("on", show);
+  document.getElementById("so-title").textContent = run.label; document.getElementById("so-cmd").textContent = run.cmd;
+  document.getElementById("so-state").textContent = run.done ? (run.code === 0 ? "done" : `failed · exit ${run.code}`) : `running · ${run.secs}s`;
+  document.getElementById("so-out").innerHTML = document.getElementById("out").innerHTML;
+}
+async function runState(run, quick) {
+  const dot = document.getElementById("s-run");   // the Run tab's dot: amber running, green done, red failed
+  if (quick && quick.at > lastQuick && quick.ok !== null) {   // a persona window or a Konnect page: red if it didn't work, with why
+    lastQuick = quick.at;
+    document.querySelectorAll(`button[data-id="${quick.id}"]`).forEach(x => { x.classList.toggle("failed", !quick.ok); if (quick.id.startsWith("chat:")) x.classList.toggle("ok-mark", quick.ok); });
+    if (quick.ok && QSTEP[quick.id] && !quick.id.startsWith("chat:")) setDone(QSTEP[quick.id]);   // a chat step is done once its messages are copied
+    if (!quick.ok) document.getElementById("run-state").textContent = `${quick.label}: ${quick.msg || "didn't work"}`;
+  }
+  if (!run) return;
+  busy = !run.done;
+  document.querySelectorAll("button.run").forEach(b => b.disabled = busy);
+  dot.className = "dot " + (busy ? "busy" : run.code === 0 ? "ok" : "bad"); dot.title = `${run.label}: ${busy ? "running" : run.code === 0 ? "done" : "failed"}`;
+  if (run.id !== view.id) { view = { ...view, id: run.id, from: 0 }; document.getElementById("out").innerHTML = ""; }
+  document.getElementById("run-title").textContent = run.label; document.getElementById("run-cmd").textContent = run.cmd;
+  document.getElementById("run-state").textContent = busy ? `running · ${run.secs}s` : run.code === 0 ? `done · ${run.secs}s` : `failed · exit ${run.code} · ${run.secs}s`;
+  if (view.from < run.n || busy || view.cur) {
+    const j = await (await fetch(`/run?id=${run.id}&from=${view.from}`, { cache: "no-store" })).json();
+    const out = document.getElementById("out"), atEnd = out.scrollHeight - out.scrollTop - out.clientHeight < 40;
+    out.querySelector(".cur")?.remove();
+    if (j.lines.length) out.insertAdjacentHTML("beforeend", j.lines.map(l => ansi(l) + "\n").join(""));
+    view.from = j.from + j.lines.length; view.cur = j.cur;
+    if (j.cur) out.insertAdjacentHTML("beforeend", `<span class="cur">${ansi(j.cur)}</span>`);
+    if (atEnd) out.scrollTop = out.scrollHeight;
+  }
+  if (!busy && view.marked !== run.id) { view.marked = run.id; mark(run.action, run.code); if (run.code === 0) setDone(RUNSTEP[run.id]); }
+  stageStrip(run);
+  if (busy) view.busyId = run.id;   // a reset or pre-flight just finished: its test calls leave the Live panes
+  else if (view.busyId === run.id && ["reset", "preflight"].includes(run.action)) { view.busyId = null; document.querySelectorAll(".list").forEach(l => l.innerHTML = ""); }
+}
+const VIEW = new URLSearchParams(location.search);   // ?live: the stage window (no Run tab); ?run: open on the Run tab (a private browser)
+if (VIEW.has("live")) document.body.classList.add("live-only"); else if (VIEW.has("run")) tab("run");
+loadConfig().catch(() => {}).finally(() => { setInterval(tick, 250); poll(); });
+</script>
+</body></html>

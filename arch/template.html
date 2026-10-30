@@ -1,0 +1,559 @@
+<title>GNB AI Gateway Architecture</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Carlito:ital,wght@0,400;0,700;1,400&display=swap">
+<style>
+/* Layered reference architecture in the deck's Kong Light theme (deliberately light-only, like the deck).
+   Bands: control plane (Konnect) on top; GNB data centre below with consumers, the Kong data plane, upstreams and supporting services.
+   Animation = highlights only: numbered steps, feature lines, connectors, outcome tags. */
+:root { color-scheme: light;
+  --ink: #001408; --ink2: #4B5650; --muted: #6B7069; --line: #D3D9CC; --panel: #F3F5F0; --panel2: #F7F9F4; --lime: #CCFF00; --green: #4A8500;
+  --red: #C8553D; --white: #FFFFFF; --hl: #FBFFE6; --bad: #FFF4F1;
+  --f: "Carlito", Calibri, "Segoe UI", Arial, sans-serif; }
+html, body { height: 100%; }
+body { background: var(--white); color: var(--ink); font-family: var(--f); }
+.app { height: 100%; box-sizing: border-box; display: grid; grid-template-rows: auto minmax(0, 1fr) auto auto; gap: 10px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 14px 10px; }
+@media (max-width: 760px) { .app { height: auto; } .stage { aspect-ratio: 1600 / 770; } }
+
+/* top bar */
+.bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
+.brand { display: grid; gap: 2px; margin-right: auto; min-width: 0; }
+.brand .eyebrow { font: 700 12px/1.2 var(--f); letter-spacing: .16em; color: var(--green); text-transform: uppercase; }
+.brand b { font: 700 24px/1.1 var(--f); }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; padding: 3px; gap: 2px; background: var(--panel2); }
+.seg button { font: 700 13px/1 var(--f); padding: 8px 12px; border: 0; border-radius: 999px; background: none; color: var(--ink2); cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--lime); }
+.scenes { display: flex; flex-wrap: wrap; gap: 6px; }
+.scenes button { font: 700 13px/1 var(--f); padding: 8px 11px; border-radius: 999px; border: 1px solid var(--line); background: var(--white); color: var(--ink); cursor: pointer; }
+.scenes button[aria-current="true"] { background: var(--lime); border-color: var(--ink); }
+.ctl { display: inline-flex; gap: 6px; }
+.icon { font: 700 13px/1 var(--f); width: 34px; height: 32px; border-radius: 8px; border: 1px solid var(--line); background: var(--white); color: var(--ink); cursor: pointer; }
+.live { font: 700 12px/1 var(--f); letter-spacing: .1em; padding: 9px 12px; border-radius: 999px; border: 1px solid var(--red); color: var(--red); background: var(--white); cursor: pointer; }
+.live[aria-pressed="true"] { background: var(--red); color: var(--white); }
+.live[aria-pressed="true"]::before { content: "● "; }
+button:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+
+/* canvas */
+.stage { position: relative; min-height: 0; }
+svg#svg { display: block; width: 100%; height: 100%; }
+svg text { font-family: var(--f); }
+.cf { fill: var(--white); stroke: var(--line); stroke-width: 1.3; transition: fill .35s, stroke .35s, stroke-width .35s; }
+.cf.dash { stroke-dasharray: 5 4; fill: var(--panel2); }
+.cf.gw { fill: var(--panel2); stroke: var(--ink); stroke-width: 2; }
+.card { cursor: pointer; }
+.card:hover .cf { stroke: var(--green); }
+.card.hl .cf { fill: var(--hl); stroke: var(--green); stroke-width: 2.6; }
+.card.bad .cf { fill: var(--bad); stroke: var(--red); stroke-width: 2.6; }
+.card.down .cf { fill: var(--bad); stroke: var(--red); stroke-dasharray: 6 4; }
+.bar-top { fill: var(--lime); }
+.ct { font-weight: 700; fill: var(--ink); }
+.cl { fill: var(--ink2); }
+.cl.strike { fill: var(--red); text-decoration: line-through; }
+.cl.hlt { fill: var(--ink); font-weight: 700; }
+.bhl { fill: transparent; transition: fill .3s; }
+.bm { fill: var(--green); transition: fill .3s; }
+.bt { fill: var(--ink); transition: fill .3s; }
+.bul.hl .bhl { fill: rgba(204, 255, 0, .55); } .bul.hl .bt { font-weight: 700; }
+.bul.bad .bhl { fill: rgba(200, 85, 61, .14); } .bul.bad .bt { fill: var(--red); font-weight: 700; } .bul.bad .bm { fill: var(--red); }
+.bul.off { opacity: .35; }
+.wire { fill: none; stroke-linejoin: round; }
+.glow { fill: none; stroke: var(--lime); stroke-width: 11; stroke-linecap: round; stroke-linejoin: round; opacity: 0; transition: opacity .35s; }
+.glow.on { opacity: .95; }
+.glow.red { stroke: rgba(200, 85, 61, .35); }
+.wire.cut { stroke: var(--red) !important; stroke-dasharray: 3 6 !important; }
+.num .ring { fill: none; stroke: var(--lime); stroke-width: 0; opacity: 0; }
+.num.on .ring { animation: ring 1.1s ease-out 2; }
+@keyframes ring { 0% { stroke-width: 10; opacity: .95; r: 12; } 100% { stroke-width: 2; opacity: 0; r: 26; } }
+@media (prefers-reduced-motion: reduce) { .num.on .ring { animation: none; opacity: .9; stroke-width: 4; } }
+.tag rect { stroke: none; } .tag text { font: 700 13.5px var(--f); }
+.tag.ink rect { fill: var(--ink); } .tag.ink text { fill: var(--lime); }
+.tag.ok rect { fill: var(--green); } .tag.ok text { fill: var(--white); }
+.tag.bad rect { fill: var(--red); } .tag.bad text { fill: var(--white); }
+.xm { stroke: var(--red); stroke-width: 3.5; stroke-linecap: round; }
+
+/* caption + footer */
+.caption { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 2px 18px; align-items: baseline; border-top: 1px solid var(--line); padding-top: 10px; }
+.cap-scene { font: 700 12.5px/1.2 var(--f); letter-spacing: .16em; text-transform: uppercase; color: var(--green); grid-row: span 2; white-space: nowrap; }
+.cap-title { font: 700 clamp(18px, 1.7vw, 24px)/1.25 var(--f); text-wrap: balance; }
+.cap-sub { font: 400 16px/1.45 var(--f); color: var(--ink2); }
+.dots { display: inline-flex; gap: 5px; margin-left: 10px; vertical-align: middle; }
+.dots i { width: 8px; height: 8px; border-radius: 50%; background: var(--line); display: inline-block; }
+.dots i.on { background: var(--green); }
+.foot { font: 400 13px/1.4 var(--f); color: var(--muted); display: flex; flex-wrap: wrap; gap: 4px 18px; }
+.foot kbd { font: 700 12px var(--f); border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; background: var(--panel2); }
+
+/* inspector + live ticker */
+.inspector { position: absolute; top: 8px; right: 8px; bottom: 8px; width: min(420px, calc(100% - 16px)); overflow-y: auto; box-sizing: border-box;
+  background: var(--white); border: 1px solid var(--ink); border-radius: 10px; padding: 16px 18px; box-shadow: 0 12px 32px rgba(0, 20, 8, .16); font-size: 15px; line-height: 1.45; }
+.inspector h3 { margin: 0 36px 2px 0; font: 700 20px/1.2 var(--f); }
+.inspector .gnb { margin: 4px 0 12px; color: var(--ink2); }
+.inspector .gnb b { color: var(--green); }
+.inspector h4 { margin: 14px 0 6px; font: 700 12px/1 var(--f); letter-spacing: .14em; text-transform: uppercase; color: var(--green); }
+.inspector table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.inspector td { padding: 5px 6px 5px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+.inspector code { font: 13px ui-monospace, Menlo, monospace; overflow-wrap: anywhere; }
+.inspector .close { position: absolute; top: 10px; right: 10px; }
+.ticker { position: absolute; left: 8px; bottom: 8px; width: min(600px, calc(100% - 16px)); box-sizing: border-box; background: var(--white); border: 1px solid var(--ink);
+  border-radius: 10px; padding: 8px 12px; font: 13px/1.6 ui-monospace, Menlo, monospace; }
+.ticker b { font: 700 12px var(--f); letter-spacing: .14em; color: var(--red); }
+.ticker .row { display: grid; grid-template-columns: 66px minmax(0, 1fr) auto; gap: 10px; white-space: nowrap; }
+.ticker .row span { overflow: hidden; text-overflow: ellipsis; }
+.ticker .badr { color: var(--red); } .ticker .good { color: var(--green); }
+
+/* slide mode: the deck's body area (2360 x 1000) with a legend column */
+.legend { display: none; }
+html.slide, html.slide body { width: 2360px; height: 1000px; overflow: hidden; }
+html.slide .app { width: 2360px; height: 1000px; padding: 0; gap: 0; grid-template-rows: 1000px; grid-template-columns: 2060px 300px; }
+html.slide .bar, html.slide .caption, html.slide .foot, html.slide .ticker, html.slide .inspector { display: none !important; }
+html.slide .legend { display: grid; align-content: start; gap: 16px; padding: 26px 18px 20px 14px; font: 400 21px/1.35 var(--f); color: var(--ink2); }
+.legend b { color: var(--ink); }
+.legend .k { display: grid; grid-template-columns: 44px 1fr; gap: 10px; align-items: center; }
+.legend .src { font-size: 17px; color: var(--muted); }
+</style>
+
+<div class="app" id="app">
+  <header class="bar">
+    <div class="brand"><span class="eyebrow" id="eyebrow">Reference architecture</span><b>GNB AI connectivity layer on Kong AI Gateway</b></div>
+    <div class="seg" role="group" aria-label="View">
+      <button type="button" id="v-demo" aria-pressed="false">Demo build</button>
+      <button type="button" id="v-prod" aria-pressed="false">GNB production</button>
+      <button type="button" id="v-map" aria-pressed="true">Mapping</button>
+    </div>
+    <nav class="scenes" id="scenes" aria-label="Scenes"></nav>
+    <div class="ctl">
+      <button type="button" class="icon" id="b-prev" aria-label="Previous scene">◀</button>
+      <button type="button" class="icon" id="b-play" aria-label="Pause">❚❚</button>
+      <button type="button" class="icon" id="b-next" aria-label="Next scene">▶</button>
+    </div>
+    <button type="button" class="live" id="b-live" aria-pressed="false" hidden>LIVE</button>
+  </header>
+  <div class="stage" id="stage">
+    <svg id="svg" viewBox="0 0 1600 770" preserveAspectRatio="xMidYMin meet" role="img" aria-label="Layered reference architecture. Control plane: Kong Konnect, holding AI Gateway configuration, analytics, configuration as code and data plane management. GNB data centre: consumers (apps, copilots, agents) call the Kong AI Gateway data plane, which applies security, governance, tokenomics and agentic policies, then calls the AI factory, enterprise APIs or an approved cloud model. Supporting services: identity provider, secrets vault, PII service, vector database, SIEM."></svg>
+    <aside class="inspector" id="inspector" hidden></aside>
+    <div class="ticker" id="ticker" hidden></div>
+  </div>
+  <section class="caption" aria-live="polite">
+    <div class="cap-scene" id="cap-scene"></div>
+    <div class="cap-title" id="cap-title"></div>
+    <div class="cap-sub" id="cap-sub"></div>
+  </section>
+  <footer class="foot">
+    <span id="foot-src"></span>
+    <span><kbd>space</kbd> pause · <kbd>←</kbd> <kbd>→</kbd> scene · <kbd>1</kbd>–<kbd>7</kbd> jump · <kbd>D</kbd> <kbd>P</kbd> <kbd>M</kbd> view · click a box for its live configuration</span>
+  </footer>
+  <aside class="legend" id="legend"></aside>
+</div>
+
+<script>const CFG = /*__CFG__*/null;</script>
+<script>
+(() => {
+  "use strict";
+  const cfg = (typeof CFG !== "undefined" && CFG) || {};
+  const NS = "http://www.w3.org/2000/svg", svg = document.getElementById("svg"), $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const hash = location.hash.replace("#", ""), SLIDE = hash === "slide", STILL = SLIDE || hash === "still";
+  if (SLIDE) { document.documentElement.classList.add("slide"); svg.setAttribute("viewBox", "22 14 1556 752"); }
+
+  // ---------- facts from the deployed config ----------
+  const models = cfg.models || [], policies = cfg.policies || [], groups = cfg.groups || [], mcp = (cfg.mcp || [])[0] || { tools: [] }, tools = mcp.tools || [];
+  const model = (n) => models.find((m) => m.name === n), pol = (n) => policies.find((p) => p.name === n);
+  const byW = (m, d) => (m ? [...m.targets].sort((a, b) => d * ((b.weight || 0) - (a.weight || 0))) : []);
+  const T1 = byW(model("gnb-assistant"), 1)[0] || { name: "qwen2.5:7b", port: 11501, weight: 100 }, T2 = byW(model("gnb-assistant"), -1)[0] || { name: "qwen2.5:1.5b", port: 11502, weight: 10 };
+  const CLOUD = byW(model("gnb-agent-llm"), 1)[0] || { name: "gpt-5.5" };
+  const cop = model("gnb-copilot"), SMALL = (cop?.targets || []).find((t) => t.semantic_description === "CATCHALL") || { name: "qwen2.5:1.5b" }, LARGE = (cop?.targets || []).find((t) => t.semantic_description && t.semantic_description !== "CATCHALL") || { name: "qwen2.5:7b" };
+  const node = (cfg.nodes || [])[0] || { version: "2.2.0", hostname: "kong-dp" };
+  const nConsumers = groups.reduce((n, g) => n + (g.consumers || []).length, 0);
+  const AGENT_GROUPS = groups.filter((g) => /^card-ops/.test(g.name)), APP_GROUPS = groups.filter((g) => !/^card-ops/.test(g.name));
+  const AGENTS = new Set(AGENT_GROUPS.flatMap((g) => (g.consumers || []).map((c) => c.name)));
+  const BUNDLE = cfg.onboard?.policies?.length ? cfg.onboard.policies : ["injection-guard", "pii-redact", "advice-guard", "response-guard", "standard-budget"];
+  const cont = (s) => (cfg.containers || []).find((c) => c.service === s);
+  const piiImg = cont("pii-service")?.image || "kong/ai-pii-service";
+  const N = (n, d) => (n || d);
+
+  // ---------- drawing kit ----------
+  function el(tag, attrs, parent) { const e = document.createElementNS(NS, tag); for (const [k, v] of Object.entries(attrs || {})) if (v !== undefined && v !== null) e.setAttribute(k, v); (parent || svg).appendChild(e); return e; }
+  function text(x, y, s, o = {}) { const t = el("text", { x, y, class: o.cls || null, "text-anchor": o.anchor || null, style: `font-size:${o.size || 14}px;${o.weight ? "font-weight:" + o.weight + ";" : ""}${o.fill ? "fill:" + o.fill + ";" : ""}${o.ls ? "letter-spacing:" + o.ls + "em;" : ""}` }, o.parent); t.textContent = s; return t; }
+  const ICON = {
+    cloud: "M7 18h10a4 4 0 0 0 .6-7.95A6 6 0 0 0 6.2 9.4 4.3 4.3 0 0 0 7 18z", server: "M4 4h16v6H4z M4 14h16v6H4z M7.5 7h.01 M7.5 17h.01",
+    shield: "M12 3l7 3v5c0 4.5-3 8.2-7 10-4-1.8-7-5.5-7-10V6z M9 12l2 2 4-4", list: "M9 6h11 M9 12h11 M9 18h11 M4.5 6h.01 M4.5 12h.01 M4.5 18h.01",
+    gauge: "M4 17a8 8 0 1 1 16 0 M12 17l4.5-5.5 M12 17h.01", plug: "M9 2v6 M15 2v6 M6.5 8h11v4a5.5 5.5 0 0 1-11 0z M12 17.5V22",
+    chip: "M7 7h10v10H7z M10 10h4v4h-4z M9.5 3v4 M14.5 3v4 M9.5 17v4 M14.5 17v4 M3 9.5h4 M3 14.5h4 M17 9.5h4 M17 14.5h4", bank: "M3 10l9-6 9 6 M5 10v8 M9.5 10v8 M14.5 10v8 M19 10v8 M3 20.5h18",
+    user: "M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8z M4.5 21a7.5 7.5 0 0 1 15 0", bot: "M5 9h14v10H5z M12 5v4 M9 14h.01 M15 14h.01 M12 4h.01 M2.5 13v3 M21.5 13v3",
+    key: "M14 10a4 4 0 1 0-1.4 3L20 20.5 M17.5 18l2-2", lock: "M6 11h12v9.5H6z M8.5 11V8a3.5 3.5 0 0 1 7 0v3",
+    db: "M4 6c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3z M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6 M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3",
+    eye: "M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z M12 9.2a2.8 2.8 0 1 0 0 5.6 2.8 2.8 0 0 0 0-5.6z", log: "M5.5 3h10l3 3v15h-13z M8.5 9h7 M8.5 13h7 M8.5 17h4.5",
+    chart: "M4 20V11 M10 20V5 M16 20v-6 M2.5 20.5h19", git: "M6 3v12 M6 15a3 3 0 1 0 0 6 3 3 0 0 0 0-6z M18 6a3 3 0 1 0 0-.01z M18 9c0 5-6 4-12 6",
+    hex: "M12 2.5l8.2 4.75v9.5L12 21.5l-8.2-4.75v-9.5z",
+  };
+  function icon(name, x, y, o = {}) {
+    const s = o.size || 34, g = el("g", {}, o.parent);
+    el("rect", { x, y, width: s, height: s, rx: 7, style: `fill:${o.tile || "var(--panel)"}` }, g);
+    el("path", { d: ICON[name], transform: `translate(${x + (s - 22) / 2} ${y + (s - 22) / 2}) scale(${22 / 24})`, style: "fill:none;stroke:var(--ink);stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round" }, g);
+  }
+  const L = {}; for (const n of ["base", "glow", "wires", "cards", "tags"]) L[n] = el("g", {});
+  const CARD = {}, BUL = {}, TXT = {}, BTXT = {}, WIRE = {}, NUM = {};
+  function card(id, x, y, w, h, o = {}) {
+    const g = el("g", { class: "card", "data-id": id, tabindex: 0 }, o.parent || L.cards);
+    el("rect", { x, y, width: w, height: h, rx: 8, class: "cf" + (o.dash ? " dash" : "") + (o.gw ? " gw" : "") }, g);
+    if (o.bar) el("path", { d: `M${x} ${y + 8} a8 8 0 0 1 8 -8 h${w - 16} a8 8 0 0 1 8 8 v-3 h-${w} z`, class: "bar-top" }, g);
+    let tx = x + 16;
+    if (o.icon) { icon(o.icon, x + 14, y + (o.bar ? 18 : 14), { parent: g, tile: o.tile }); tx = x + 58; }
+    const ty = y + (o.bar ? 40 : 32);
+    const title = text(tx, ty, "", { cls: "ct", size: o.titleSize || 17, parent: g });
+    const lines = Array.from({ length: o.nlines || 0 }, (_, i) => text(tx, ty + (o.lineGap || 19) * (i + 1), "", { cls: "cl", size: o.lineSize || 14, parent: g }));
+    (o.bullets || []).forEach((bid, i) => {
+      const by = y + (o.bulletTop || 78) + i * (o.bulletGap || 23), bg = el("g", { class: "bul" }, g);
+      el("rect", { x: x + 9, y: by - 15.5, width: w - 18, height: 21, rx: 4, class: "bhl" }, bg);
+      el("rect", { x: x + 16, y: by - 9, width: 6, height: 6, rx: 1, class: "bm" }, bg);
+      BUL[bid] = { g: bg, t: text(x + 30, by, "", { cls: "bt", size: o.bulletSize || 14.5, parent: bg }) };
+    });
+    g.addEventListener("click", (e) => { e.stopPropagation(); inspect(id); });
+    g.addEventListener("keydown", (e) => { if (e.key === "Enter") inspect(id); });
+    CARD[id] = { g, title, lines, x, y, w, h };
+  }
+  function marker(id, color) { return `<marker id="${id}" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0.5L10 5L0 9.5z" style="fill:${color}"/></marker>`; }
+  el("defs").innerHTML = marker("m-ai", "var(--ink)") + marker("m-cfg", "var(--green)") + marker("m-grey", "var(--muted)") + marker("m-red", "var(--red)");
+  function wire(id, pts, o = {}) {
+    const d = "M" + pts.map((p) => p.join(" ")).join(" L"), st = o.style || "ai";
+    const color = { ai: "var(--ink)", cfg: "var(--green)", grey: "var(--muted)" }[st], dash = { ai: null, cfg: "6 5", grey: "3 5" }[st];
+    const glow = el("path", { d, class: "glow" }, L.glow);
+    const w = el("path", { d, class: "wire", style: `stroke:${color};stroke-width:${o.sw || 2}${dash ? ";stroke-dasharray:" + dash : ""}`, "marker-end": o.noEnd ? null : `url(#m-${st})`, "marker-start": o.both ? `url(#m-${st})` : null }, L.wires);
+    WIRE[id] = { glow, w };
+  }
+  function label(x, y, s, o = {}) { const w = s.length * 6.7 + 12, x0 = o.anchor === "end" ? x - w : o.anchor === "start" ? x : x - w / 2; el("rect", { x: x0 - 2, y: y - 13, width: w + 4, height: 18, style: `fill:${o.bg || "var(--white)"}` }, L.wires); return text(x + (o.anchor === "start" ? 4 : o.anchor === "end" ? -4 : 0), y, s, { size: 13, fill: o.fill || "var(--ink2)", anchor: o.anchor || "middle", parent: L.wires }); }
+  function num(id, x, y, n, r = 12) { const g = el("g", { class: "num" }, L.tags); el("circle", { cx: x, cy: y, r: 12, class: "ring" }, g); el("circle", { cx: x, cy: y, r, style: "fill:var(--ink)" }, g); text(x, y + 4.6, String(n), { size: 13.5, weight: 700, fill: "var(--lime)", anchor: "middle", parent: g }); NUM[id] = g; }
+  function band(x, y, w, h, o) {
+    el("rect", { x, y, width: w, height: h, rx: 12, style: `fill:${o.fill || "var(--panel2)"};stroke:${o.stroke || "var(--line)"};stroke-width:${o.sw || 1.3}` }, L.base);
+    el("rect", { x, y: y + 14, width: 5, height: 26, rx: 2.5, style: "fill:var(--lime)" }, L.base);
+    text(x + 20, y + 33, o.eyebrow, { size: 13, weight: 700, fill: "var(--green)", ls: 0.14, parent: L.base });
+    return text(x + 20 + o.offset, y + 33, "", { size: 15, fill: "var(--ink2)", parent: L.base });
+  }
+
+  // ---------- the layout (example A) ----------
+  const cpTitle = band(40, 20, 1520, 136, { eyebrow: "CONTROL PLANE", offset: 128 });
+  const cw = 358;
+  card("cp_config", 60, 58, cw, 84, { icon: "cloud", nlines: 2 });
+  card("cp_analytics", 60 + (cw + 16), 58, cw, 84, { icon: "chart", nlines: 2 });
+  card("cp_code", 60 + 2 * (cw + 16), 58, cw, 84, { icon: "git", nlines: 2 });
+  card("cp_dp", 60 + 3 * (cw + 16), 58, cw, 84, { icon: "server", nlines: 2 });
+  wire("cfg", [[990, 156], [990, 252]], { style: "cfg" }); label(978, 184, "config sync · mTLS · outbound 443 only", { anchor: "end", fill: "var(--green)" }); num("n1", 1014, 180, 1);
+  wire("meta", [[1120, 252], [1120, 156]], { style: "cfg" }); label(1132, 184, "usage metadata · no prompts or answers", { anchor: "start", fill: "var(--green)" });
+  const dcTitle = band(40, 202, 1520, 556, { eyebrow: "GNB DATA CENTRE", offset: 140, fill: "var(--white)", stroke: "var(--ink)", sw: 1.5 });
+  text(60, 264, "CONSUMERS", { size: 12.5, weight: 700, fill: "var(--muted)", ls: 0.14, parent: L.base });
+  card("apps", 60, 276, 264, 104, { icon: "user", nlines: 3 });
+  card("agents", 60, 396, 264, 84, { icon: "bot", nlines: 2 });
+  const noteT = [0, 1, 2].map((i) => text(60, 510 + i * 18, "", { size: 13.5, fill: "var(--muted)", parent: L.base }));
+  // Kong AI Gateway
+  const gx = 360, gy = 254, gw = 850, gh = 344;
+  card("gw", gx, gy, gw, gh, { gw: true, nlines: 1, titleSize: 21 });
+  icon("hex", gx + 18, gy + 16, { tile: "var(--lime)", size: 38, parent: CARD.gw.g });
+  CARD.gw.title.setAttribute("x", gx + 68); CARD.gw.title.setAttribute("y", gy + 36); CARD.gw.lines[0].setAttribute("x", gx + 68); CARD.gw.lines[0].setAttribute("y", gy + 56);
+  card("ep_llm", gx + 18, gy + 70, 400, 58, { titleSize: 15, nlines: 1, lineGap: 17 });
+  card("ep_mcp", gx + 432, gy + 70, 400, 58, { titleSize: 15, nlines: 1, lineGap: 17 });
+  num("n3", gx + gw - 20, gy + 98, 3);
+  const fw = 194.5, fy = gy + 136, fh = 196;
+  [["f_sec", "shield", ["sec_auth", "sec_acl", "sec_pii", "sec_guard", "sec_ans"]], ["f_gov", "list", ["gov_groups", "gov_bundle", "gov_audit", "gov_metrics", "gov_code"]],
+   ["f_tok", "gauge", ["tok_budget", "tok_cache", "tok_route", "tok_failover", "tok_price"]], ["f_ag", "plug", ["ag_mcp", "ag_acl", "ag_audit", "ag_model"]]]
+    .forEach(([id, ic, b], i) => card(id, gx + 18 + i * (fw + 12), fy, fw, fh, { bar: true, icon: ic, bullets: b, bulletTop: 78, bulletGap: 23 }));
+  wire("apps", [[324, 328], [358, 328]], { both: true }); wire("agents", [[324, 438], [358, 438]], { both: true }); num("n2", 341, 304, 2);
+  text(1250, 264, "UPSTREAMS", { size: 12.5, weight: 700, fill: "var(--muted)", ls: 0.14, parent: L.base });
+  card("factory", 1250, 276, 290, 118, { icon: "chip", nlines: 4, lineGap: 18.5 });
+  card("apis", 1250, 410, 290, 84, { icon: "bank", nlines: 2 });
+  card("cloud", 1250, 510, 290, 84, { icon: "cloud", nlines: 2, dash: true });
+  wire("up_factory", [[1212, 334], [1248, 334]], { both: true }); wire("up_apis", [[1212, 452], [1248, 452]], { both: true }); wire("up_cloud", [[1212, 552], [1248, 552]], { both: true, style: "grey" });
+  num("n4", 1230, 310, 4);
+  const n5text = text(gx + gw / 2 + 12, gy + gh + 24, "the answer passes the answer check and is audited before it returns", { size: 14, fill: "var(--ink2)", anchor: "middle", parent: L.base });
+  num("n5", gx + gw / 2 - 210, gy + gh + 19, 5, 10); void n5text;
+  // supporting services
+  const sw = 283.2, sy = 656, SVC = ["s_idp", "s_vault", "s_pii", "s_vec", "s_siem"], sx = (i) => 60 + i * (sw + 16), scx = (i) => sx(i) + sw / 2;
+  el("path", { d: `M${gx + gw / 2} ${gy + gh + 34} V636 M${scx(0)} 636 H${scx(4)}`, style: "fill:none;stroke:var(--muted);stroke-width:1.5;stroke-dasharray:3 5" }, L.wires);
+  SVC.forEach((id, i) => wire(id, [[scx(i), 636], [scx(i), sy - 2]], { style: "grey", noEnd: true }));
+  text(1540, 630, "supporting services, inside the data centre", { size: 13, fill: "var(--muted)", anchor: "end", parent: L.base });
+  [["s_idp", "key"], ["s_vault", "lock"], ["s_pii", "eye"], ["s_vec", "db"], ["s_siem", "log"]].forEach(([id, ic], i) => card(id, sx(i), sy, sw, 84, { icon: ic, nlines: 2, titleSize: 16, lineSize: 13.5 }));
+
+  // ---------- text per view: demo build, GNB production, mapping ----------
+  const V = (demo, prod = demo, map = prod) => ({ demo, prod, map });  // a label that's the same in every view is given once
+  const counts1 = `${N(models.length, 3)} models · ${N((cfg.providers || []).length, 3)} providers · ${N(policies.length, 9)} policies`;
+  const counts2 = `${N(groups.length, 6)} use cases · ${N(nConsumers, 6)} consumers · ${N(tools.length, 4)} MCP tools`;
+  Object.assign(TXT, {
+    cp_config: [V("AI Gateway configuration"), V([counts1, counts2], ["models · providers · policies · consumers", "MCP servers · vaults · auth strategies"], ["models · providers · policies · consumers", "MCP servers · vaults · auth strategies"])],
+    cp_analytics: [V("Analytics"), V(["tokens, cost and latency per use case", "dashboards · Explorer · metrics API"])],
+    cp_code: [V("Configuration as code"), V(["Git + kongctl on this Mac", "kongctl diff -f kong/: no changes"], ["Git · CI pipeline · kongctl / Terraform", "every change reviewed and diffed"], ["Git · kongctl · Terraform · Konnect UI", "every change reviewed and diffed"])],
+    cp_dp: [V("Data plane management"), V([`node ${node.hostname} · v${node.version}`, "mTLS certificate · no inbound ports"], ["nodes in DC1 and DC2 · versions · sync", "mTLS certificates · no inbound ports"], ["nodes, versions, sync status", "mTLS certificates · no inbound ports"])],
+    apps: [V("Apps & copilots"), V(APP_GROUPS.length ? [APP_GROUPS.slice(0, 2).map((g) => g.name).join(" · "), APP_GROUPS.slice(2, 4).map((g) => g.name).join(" · "), "OpenAI SDK, base_url = Kong"] : ["retail · AML · credit memo", "knowledge · complaints", "OpenAI SDK, base_url = Kong"],
+      ["channels · branch · contact centre", "staff copilots", "same SDKs, OIDC token per use case"], ["retail · AML · credit memo", "knowledge · complaints", "OpenAI SDK, base_url = Kong"])],
+    agents: [V("AI agents"), V([AGENT_GROUPS.map((g) => (g.consumers || [])[0]?.name).filter(Boolean)[0] || "card-ops-agent-01", "khalid · supervisor, may block"], ["card-ops · KYC · collections", "complaints · 5 agentic use cases"], ["card-ops agent", "supervisor (may block cards)"])],
+    gw: [V("Kong AI Gateway · data plane"), V([`kong-dp ${node.version} in Docker · policies in-process · keeps serving on last-known config if Konnect is unreachable`], ["policies run in-process on every node · keeps serving on last-known config if Konnect is unreachable"], ["policies run in-process on every request · keeps serving on last-known config if Konnect is unreachable"])],
+    ep_llm: [V("AI Models  ·  /v1  ·  OpenAI-compatible"), V([models.map((m) => m.name).sort().join(" · ") || "gnb-agent-llm · gnb-assistant · gnb-copilot"])],
+    ep_mcp: [V(`AI MCP Server  ·  ${(mcp.path || ["/mcp/card-services"])[0]}`), V([`card-services REST API exposed as ${N(tools.length, 4)} tools`])],
+    f_sec: [V("Security"), V([])], f_gov: [V("Governance"), V([])], f_tok: [V("Tokenomics"), V([])], f_ag: [V("Agentic"), V([])],
+    factory: [V("AI factory · Ollama", "AI factory · vLLM", "AI factory · vLLM"), V([`DC1 primary · ${T1.name}`, `DC2 DR · ${T2.name}`, "embeddings · nomic-embed-text", "Ollama on the Mac, Metal GPU"],
+      ["DC1 primary · Arabic-capable LLMs", "DC2 DR · fallback model", "embedding model", "vLLM · 64 GPUs (8 nodes × 8)"], ["DC1 primary · Arabic-capable LLMs", "DC2 DR · fallback model", "embedding model", `demo: Ollama, ${T1.name.replace("qwen2.5:", "qwen2.5 ")} / ${T2.name.replace("qwen2.5:", "")}`])],
+    apis: [V("Enterprise APIs"), V(["card-services mock · fake data", `${N(tools.length, 4)} MCP tools`], ["card services · KYC · cases", "called as MCP tools"], ["card services · KYC · cases", "called as MCP tools"])],
+    cloud: [V("Cloud LLM · approved only"), V([`agent model: ${CLOUD.name}`, "outside GNB · demo only"], ["outside GNB, redacted first", "approved use cases only"], ["outside GNB, redacted first", `demo agent: ${CLOUD.name}`])],
+    s_idp: [V("Identity provider"), V(["API keys per use case", "OIDC example ready"], ["OIDC tokens, groups claim", "GNB's identity provider"], ["OIDC tokens, groups claim", "demo: API keys"])],
+    s_vault: [V("Secrets vault"), V([`env vault ${(cfg.vaults || [])[0]?.name || "gnb-env"}`, "OpenAI key by reference"], ["provider keys by reference", "HashiCorp Vault / KMS"], ["provider keys by reference", "demo: env vault"])],
+    s_pii: [V("PII service"), V([piiImg.replace("kong/", ""), "container on the Mac"], ["redaction, runs in-cluster", "Arabic model pluggable"], ["redaction, runs locally", "Kong ai-pii-service"])],
+    s_vec: [V("Vector DB + embeddings"), V([`${cont("redis")?.image || "redis"} + nomic-embed-text`, "guards, cache, routing"], ["pgvector + embedding model", "guards, cache, routing"], ["guards, cache, routing", "pgvector · demo: Redis"])],
+    s_siem: [V("SIEM & monitoring"), V(["audit lines on stdout", "Prometheus on :8100"], ["SIEM via http-log / OpenTelemetry", "GNB monitoring"], ["audit lines, metrics", "demo: stdout, Prometheus"])],
+  });
+  Object.assign(BTXT, {
+    sec_auth: V("API key per use case", "OIDC (GNB IdP)", "Key auth → OIDC"), sec_acl: V("ACL per use case"), sec_pii: V("PII sanitizer (EID)"), sec_guard: V("Prompt guards"), sec_ans: V("Answer check"),
+    gov_groups: V("Use-case groups"), gov_bundle: V("Bundle, reviewed once"), gov_audit: V("Audit log, no payloads"), gov_metrics: V("Metrics per use case"), gov_code: V("Config as code"),
+    tok_budget: V("Token budgets"), tok_cache: V("Semantic cache"), tok_route: V("Semantic routing"), tok_failover: V("Failover DC1 → DR"), tok_price: V("Internal token prices"),
+    ag_mcp: V("MCP from REST API"), ag_acl: V("Tool ACLs per identity"), ag_audit: V("Agent + officer audit"), ag_model: V("Agent model via Kong"),
+  });
+  const EYEBROW = V("Reference architecture · as built for the demo", "Reference architecture · GNB production target", "Reference architecture · demo mapped to production");
+  const CPT = V("Kong Konnect · SaaS · EU region (trial)", "Kong Konnect · SaaS · ME region", "Kong Konnect · SaaS · ME region for GNB (EU trial in the demo)");
+  const DCT = V("Data plane and everything it calls · this Mac stands in for the data centre", "Data plane and everything it calls · Kubernetes, active-active in DC1 + DC2", "Data plane and everything it calls · Kubernetes, active-active in DC1 + DC2 (demo: Docker on a Mac)");
+  const NOTE = V(["Each caller is a consumer in a", "use-case group, with its own", "API key."], ["Each caller is a consumer in a", "use-case group, identified by", "an OIDC token."], ["Each caller is a consumer in a", "use-case group: API key in the", "demo, OIDC token at GNB."]);
+  let view = "map";
+  function setView(v) {
+    view = v;
+    for (const [id, [t, ls]] of Object.entries(TXT)) { const c = CARD[id]; if (!c) continue; c.title.textContent = t[v]; (ls[v] || []).forEach((s, i) => { if (c.lines[i]) c.lines[i].textContent = s; }); }
+    for (const [id, t] of Object.entries(BTXT)) BUL[id].t.textContent = t[v];
+    cpTitle.textContent = CPT[v]; dcTitle.textContent = DCT[v]; NOTE[v].forEach((s, i) => (noteT[i].textContent = s)); $("eyebrow").textContent = EYEBROW[v];
+    ["demo", "prod", "map"].forEach((x) => $("v-" + x).setAttribute("aria-pressed", String(x === v)));
+    if (cutState) CARD.cp_dp.lines[0].textContent = "data plane unreachable · serving last-known config";
+    if (!$("inspector").hidden && lastInspect) inspect(lastInspect);
+  }
+  $("v-demo").onclick = () => setView("demo"); $("v-prod").onclick = () => setView("prod"); $("v-map").onclick = () => setView("map");
+
+  // ---------- highlight effects ----------
+  let tok = { alive: true }, playing = true, liveMode = false, cutState = false;
+  const STOP = Symbol("stop"), later = (fn, ms) => setTimeout(fn, ms);
+  const wait = (ms, t = tok) => new Promise((res, rej) => { let left = ms, last = performance.now(); const tick = () => { if (!t.alive) return rej(STOP); const now = performance.now(); if (playing || liveMode) left -= now - last; last = now; if (left <= 0) return res(); setTimeout(tick, 40); }; tick(); });
+  function hl(id, ms = 1600, cls = "hl") { const c = CARD[id]; if (!c) return; c.g.classList.add(cls); later(() => c.g.classList.remove(cls), ms); }
+  function bul(id, ms = 1600, cls = "hl") { const b = BUL[id]; if (!b) return; b.g.classList.add(cls); later(() => b.g.classList.remove(cls), ms); }
+  function glow(id, ms = 1300, red) { const w = WIRE[id]; if (!w) return; w.glow.classList.toggle("red", !!red); w.glow.classList.add("on"); later(() => w.glow.classList.remove("on"), ms); }
+  function pulse(id) { const n = NUM[id]; if (!n) return; n.classList.remove("on"); void n.getBoundingClientRect(); n.classList.add("on"); later(() => n.classList.remove("on"), 2300); }
+  function line(id, i, cls, ms = 1800) { const t = CARD[id]?.lines[i]; if (!t) return; t.classList.add(cls); if (ms) later(() => t.classList.remove(cls), ms); }
+  const TAG_AT = {
+    apps: [324, 286, "end"], agents: [324, 406, "end"], gw: [gx + gw - 46, gy + 24, "end"], f_sec: [gx + 18 + fw / 2, fy + fh + 3, "middle"], f_gov: [gx + 18 + (fw + 12) + fw / 2, fy + fh + 3, "middle"],
+    f_tok: [gx + 18 + 2 * (fw + 12) + fw / 2, fy + fh + 3, "middle"], f_ag: [gx + 18 + 3 * (fw + 12) + fw / 2, fy + fh + 3, "middle"], factory: [1540, 268, "end"], apis: [1540, 404, "end"], cloud: [1540, 504, "end"],
+    cp_config: [60 + cw, 52, "end"], cp_analytics: [60 + (cw + 16) + cw, 52, "end"], cp_code: [60 + 2 * (cw + 16) + cw, 52, "end"], cp_dp: [60 + 3 * (cw + 16) + cw, 52, "end"],
+    s_pii: [scx(2), sy - 10, "middle"], s_vec: [scx(3), sy - 10, "middle"], s_siem: [scx(4), sy - 10, "middle"], link: [1055, 214, "middle"],
+  };
+  function tag(at, s, tone = "ink", ms = 2600) {
+    const p = TAG_AT[at]; if (!p) return; const [x, y, a] = p, w = s.length * 7.3 + 20, x0 = a === "end" ? x - w : a === "middle" ? x - w / 2 : x;
+    const g = el("g", { class: "tag " + tone }, L.tags); el("rect", { x: x0, y: y - 16, width: w, height: 23, rx: 11.5 }, g); text(x0 + 10, y + 0.5, s, { parent: g }); later(() => g.remove(), ms);
+  }
+  function setBundle(on) { ["sec_pii", "sec_guard", "sec_ans", "gov_bundle"].forEach((b) => BUL[b].g.classList.toggle("off", !on)); }
+  function setCut(cut) { cutState = !!cut; ["cfg", "meta"].forEach((w) => WIRE[w].w.classList.toggle("cut", cutState)); CARD.cp_dp.g.classList.toggle("bad", cutState); setView(view); }
+  function setDown(dc, down) { line("factory", dc === "dc1" ? 0 : 1, "strike", 0); if (!down) CARD.factory.lines[dc === "dc1" ? 0 : 1].classList.remove("strike"); }
+  function svc(id, ms = 1300) { glow(id, ms); hl(id, ms); }
+
+  // one LLM call, drawn as a sequence of highlights
+  async function llm(o, t = tok) {
+    const who = o.who || "apps", D = o.d || 420;
+    hl(who, 5200); glow(who); pulse("n2"); await wait(D, t);
+    hl("gw", 4800); pulse("n3"); hl("f_sec", 2600); bul("sec_auth"); await wait(D * 0.7, t);
+    if (o.block === "auth") { bul("sec_auth", 2600, "bad"); tag("f_sec", o.label || "401 · no key", "bad"); glow(who, 1400, true); return; }
+    bul("sec_acl");
+    if (o.block === "acl") { bul("sec_acl", 2600, "bad"); tag("f_sec", o.label || "403 · not this use case", "bad"); glow(who, 1400, true); return; }
+    hl("f_gov", 1800); bul("gov_groups"); await wait(D * 0.6, t);
+    if (!o.bundleOff) {
+      if (o.pii) { bul("sec_pii", 2200); svc("s_pii"); tag("s_pii", o.piiLabel || "redacted locally", "ok", 2200); await wait(D, t); }
+      bul("sec_guard");
+      if (o.block === "guard") { svc("s_vec"); await wait(D * 0.6, t); bul("sec_guard", 2800, "bad"); hl("f_sec", 2600, "bad"); tag("f_sec", o.label || "403 · blocked", "bad"); glow(who, 1400, true); bul("gov_audit"); svc("s_siem"); return; }
+      await wait(D * 0.5, t);
+    }
+    hl("f_tok", 2600);
+    if (o.cache) { bul("tok_cache", 2200); svc("s_vec"); await wait(D, t); if (o.cache === "hit") { tag("f_tok", "cache hit · no model call", "ok"); glow(who, 1400); bul("gov_audit"); svc("s_siem"); return; } }
+    bul("tok_budget");
+    if (o.block === "budget") { await wait(D * 0.5, t); bul("tok_budget", 2800, "bad"); hl("f_tok", 2600, "bad"); tag("f_tok", o.label || "429 · budget reached", "bad"); glow(who, 1400, true); return; }
+    bul(o.failover ? "tok_failover" : "tok_route", 2200); if (o.semantic) svc("s_vec", 900); await wait(D * 0.6, t);
+    // upstream
+    const up = o.target === "cloud" ? "cloud" : "factory";
+    pulse("n4"); glow("up_" + up); hl(up, 2400);
+    if (o.failover) { line("factory", 0, "strike", 2600); tag("factory", "DC1 unreachable", "bad", 1600); await wait(D * 1.3, t); line("factory", 1, "hlt", 2200); }
+    else if (up === "factory") line("factory", o.dr ? 1 : 0, "hlt", 2200);
+    if (o.model) tag(up, o.model, "ink", 2600);
+    await wait(D * 1.4, t);
+    // back: answer check and audit
+    pulse("n5"); glow("up_" + up);
+    if (!o.bundleOff) { bul("sec_ans"); if (o.block === "answer") { svc("s_vec"); await wait(D * 0.6, t); bul("sec_ans", 2800, "bad"); hl("f_sec", 2600, "bad"); tag("f_sec", o.label || "403 · answer blocked", "bad"); } }
+    bul("gov_audit"); bul("gov_metrics"); bul("tok_price"); svc("s_siem"); await wait(D * 0.6, t);
+    glow(who, 1400, o.block === "answer");
+  }
+  async function tool(o, t = tok) {
+    const D = o.d || 420;
+    hl("agents", 4200); glow("agents"); pulse("n2"); await wait(D, t);
+    hl("gw", 3800); hl("ep_mcp", 3200); pulse("n3"); hl("f_sec", 1600); bul("sec_auth"); await wait(D * 0.6, t);
+    hl("f_ag", 3000); bul("ag_mcp"); bul("ag_acl"); await wait(D * 0.7, t);
+    if (o.list) { tag("f_ag", o.label || "tools/list", "ink"); bul("ag_audit"); svc("s_siem"); glow("agents"); return; }
+    if (o.deny) { bul("ag_acl", 2800, "bad"); hl("f_ag", 2600, "bad"); tag("f_ag", o.label || "403 · not allowed", "bad"); bul("ag_audit"); svc("s_siem"); glow("agents", 1400, true); return; }
+    pulse("n4"); glow("up_apis"); hl("apis", 2200); tag("apis", o.label || "200", "ink"); await wait(D * 1.3, t);
+    glow("up_apis"); bul("ag_audit"); svc("s_siem"); await wait(D * 0.5, t); glow("agents");
+  }
+  async function cfgPush(label = "config applied", t = tok) { hl("cp_code", 1800); bul("gov_code"); await wait(500, t); hl("cp_config", 1800); await wait(400, t); pulse("n1"); glow("cfg", 1500); await wait(600, t); hl("gw", 1800); tag("gw", label, "ink"); }
+  async function meta(t = tok) { glow("meta", 1500); await wait(600, t); hl("cp_analytics", 2000); tag("cp_analytics", "tokens + cost per use case", "ok"); }
+
+  // ---------- scenes ----------
+  const S = (cap, sub, run, hold) => ({ cap, sub, run, hold });
+  const lim = () => (pol("token-budget")?.settings?.limits || [{ limit: 500000, window_size: 86400 }, { limit: 700, window_size: 600 }]).map((l) => `${Number(l.limit).toLocaleString("en")} tokens / ${l.window_size >= 86400 ? "day" : l.window_size / 60 + " min"}`).join(" and ");
+  const SCENES = [
+    { id: "overview", name: "Overview", steps: [
+      S("Configuration lives in the control plane; Konnect pushes it to the data plane over an outbound mTLS link.", "Step 1. The data plane caches it, so traffic never depends on Konnect.", async () => { await cfgPush("last-known config cached"); }),
+      S("Every app, copilot and agent calls one governed endpoint in the data centre.", "Steps 2 to 5: identity, the policy groups, the upstream call, then the answer check and audit on the way back.", async () => { await llm({ pii: true, model: `200 · ${T1.name}` }); }),
+      S("Agents reach enterprise APIs the same way, as governed MCP tools.", "The card-services REST API is exposed as tools; each call is checked against the agent's identity.", async () => { await tool({ label: "get_card_status · 200" }); }),
+      S("Only usage metadata goes back to Konnect: tokens, cost and latency per use case.", "No prompts, answers or tool payloads leave the data centre.", async () => { await meta(); }),
+    ] },
+    { id: "act1", name: "Act 1 · Failover", steps: [
+      S(`One endpoint, gnb-assistant. DC1 answers with ${T1.name}.`, `Priority balancer: DC1 (weight ${T1.weight ?? 100}) takes the traffic; DC2 (weight ${T2.weight ?? 10}) stands by.`, async () => { await llm({ model: `200 · ${T1.name}` }); }),
+      S("DC1 goes down. The same request moves to the DR site, inside the same call.", `The app still gets 200, now from ${T2.name}, with identity, policies and token accounting attached.`, async () => { await llm({ failover: true, model: `200 · ${T2.name}` }); }),
+    ] },
+    { id: "act2", name: "Act 2 · Production gate", setup() { setBundle(false); }, steps: [
+      S("The pilot today: identity and access only. The complaint reaches the model with the name and Emirates ID.", "The security bundle isn't attached to the retail copilot yet.", async () => { await llm({ bundleOff: true, model: "sees: name + Emirates ID" }); }),
+      S("Security reviews one bundle; it's attached to the use case with one line in Git.", `${BUNDLE.filter((n) => n !== "standard-budget").map((n) => pol(n)?.display_name || n).join(" · ")}.`, async () => { await cfgPush("bundle attached"); setBundle(true); }),
+      S("Same complaint: the local PII service redacts it before the model sees it.", "The model still understands the complaint, without the personal data.", async () => { await llm({ pii: true, piiLabel: "name + Emirates ID redacted", model: "sees: PLACEHOLDER1…3" }); }),
+      S("Investment advice is blocked by meaning, before any GPU time.", `Embeddings and the vector store: distance 0.15 to a deny prompt, threshold ${pol("advice-guard")?.settings?.threshold ?? 0.4}.`, async () => { await llm({ pii: true, block: "guard", label: "403 · blocked by meaning" }); }),
+      S("A loan promise in the draft answer is blocked on the way back.", `The answer check compares it with statements the bank must never make: distance 0.29, threshold ${pol("response-guard")?.settings?.threshold ?? 0.38}.`, async () => { await llm({ pii: true, block: "answer", model: "draft: \"approved\"", label: "403 · answer blocked" }); }),
+    ] },
+    { id: "act3", name: "Act 3 · Tokenomics", steps: [
+      S(`Semantic routing: routine questions to ${SMALL.name}, AML analysis to ${LARGE.name}.`, "The prompt's meaning picks the right-sized model; the big GPUs work on what needs them.", async () => { await llm({ pii: true, semantic: true, model: `routine → ${SMALL.name}` }); }),
+      S("A reworded repeat is answered from the semantic cache: no model call, zero cost.", `Cache threshold ${pol("semantic-cache")?.settings?.threshold ?? 0.12}, one-hour TTL.`, async () => { await llm({ pii: true, cache: "hit" }); }),
+      S("Once the use case's token budget is spent, Kong answers 429 without calling the model.", `Retail copilot: ${lim()}.`, async () => { await llm({ pii: true, block: "budget" }); }),
+      S("Tokens and cost per use case arrive in Konnect Analytics, as metadata only.", "Internal prices per model turn tokens into a chargeback view for the CIO.", async () => { await meta(); }),
+    ] },
+    { id: "act4", name: "Act 4 · Agents", steps: [
+      S(`The agent's model calls go through the same policies: ${CLOUD.name} in the demo, the factory's 7B as fallback.`, "Same identity, budget and audit as any other use case.", async () => { await llm({ who: "agents", target: "cloud", model: `200 · ${CLOUD.name}` }); }),
+      S(`Tool discovery: the agent's identity sees ${tools.filter((x) => (x.allow || []).includes("card-ops-agent")).length || 3} of ${N(tools.length, 4)} tools.`, `${tools.filter((x) => !(x.allow || []).includes("card-ops-agent")).map((x) => x.name).join(", ") || "block_card"} is hidden from the agent.`, async () => { await tool({ list: true, label: "tools/list · 3 of 4" }); }),
+      S("Allowed tools become REST calls to the bank API, audited with the agent and the officer.", "get_card_status, get_kyc_status, escalate_to_supervisor.", async () => { await tool({ label: "get_card_status · 200" }); }),
+      S("block_card from the agent is refused, and the refusal is audited. The supervisor's identity may block.", "What an agent may do belongs to its identity, not its code.", async () => { await tool({ deny: true, label: "block_card · 403" }); await tool({ label: "supervisor: block_card · 200" }); }),
+    ] },
+    { id: "finale", name: "Finale · Konnect cut", steps: [
+      S("The link to Konnect is cut.", "Nothing changes for traffic: the data plane runs on its last-known configuration.", async () => { setCut(true); tag("link", "control plane link down", "bad", 3400); await wait(900); }),
+      S("Calls keep flowing through every policy group.", "Redaction, guards, budgets and tool permissions all run inside the data centre.", async () => { await llm({ pii: true, model: `200 · ${T1.name}` }); await tool({ list: true, label: "tools/list · still 3" }); }),
+      S("The link is restored; the data plane reconnects in seconds with the same configuration.", "For that minute, the only thing lost was the ability to change configuration.", async () => { setCut(false); await meta(); }),
+    ] },
+    { id: "onboard", name: "13th use case", steps: [
+      S("A new use case is 15 lines in Git: a consumer, a key, a group with the reviewed bundle and a standard budget.", `${cfg.onboard?.group || "complaints-copilot"}: ${(cfg.onboard?.policies || BUNDLE).join(", ")}.`, async () => { await cfgPush(`${cfg.onboard?.group || "complaints-copilot"} live`); }),
+      S("Its first call goes through the same policies, with a daily budget and the same audit.", "The other eleven pilots go to production the same way.", async () => { await llm({ pii: true, model: `200 · ${T1.name}` }); }),
+    ] },
+  ];
+
+  // ---------- engine ----------
+  let sceneIdx = 0; const nav = $("scenes");
+  SCENES.forEach((s, i) => { const b = document.createElement("button"); b.type = "button"; b.textContent = s.name; b.onclick = () => { stopLive(); playFrom(i); }; nav.appendChild(b); });
+  function setCaption(s, k) {
+    $("cap-scene").textContent = s.name; $("cap-title").textContent = s.steps[k].cap;
+    $("cap-sub").innerHTML = esc(s.steps[k].sub) + `<span class="dots">${s.steps.map((_, j) => `<i class="${j <= k ? "on" : ""}"></i>`).join("")}</span>`;
+    [...nav.children].forEach((b, j) => b.setAttribute("aria-current", String(j === sceneIdx)));
+  }
+  function resetState() { setCut(false); setBundle(true); setDown("dc1", false); setDown("dc2", false); L.tags.querySelectorAll(".tag").forEach((t) => t.remove()); }
+  async function playFrom(i) {
+    tok.alive = false; tok = { alive: true }; const t = tok;
+    try { for (let s = i; ; s = (s + 1) % SCENES.length) { sceneIdx = s; resetState(); SCENES[s].setup?.(); for (let k = 0; k < SCENES[s].steps.length; k++) { setCaption(SCENES[s], k); await SCENES[s].steps[k].run(); await wait(SCENES[s].steps[k].hold ?? 1900, t); } await wait(800, t); } }
+    catch (e) { if (e !== STOP) console.error(e); }
+  }
+  function setPlaying(p) { playing = p; $("b-play").textContent = p ? "❚❚" : "▶︎"; $("b-play").setAttribute("aria-label", p ? "Pause" : "Play"); }
+  $("b-play").onclick = () => setPlaying(!playing);
+  $("b-next").onclick = () => { stopLive(); playFrom((sceneIdx + 1) % SCENES.length); };
+  $("b-prev").onclick = () => { stopLive(); playFrom((sceneIdx - 1 + SCENES.length) % SCENES.length); };
+  document.addEventListener("keydown", (e) => {
+    if (e.key === " ") { e.preventDefault(); setPlaying(!playing); } else if (e.key === "ArrowRight") $("b-next").click(); else if (e.key === "ArrowLeft") $("b-prev").click();
+    else if (/^[1-7]$/.test(e.key)) { stopLive(); playFrom(+e.key - 1); } else if (/^[dD]$/.test(e.key)) setView("demo"); else if (/^[pP]$/.test(e.key)) setView("prod"); else if (/^[mM]$/.test(e.key)) setView("map");
+    else if (/^[lL]$/.test(e.key) && !$("b-live").hidden) $("b-live").click(); else if (e.key === "Escape") $("inspector").hidden = true;
+  });
+
+  // ---------- inspector: the live configuration behind each box ----------
+  let lastInspect = null;
+  const kv = (o) => `<table>${Object.entries(o || {}).map(([k, v]) => `<tr><td>${esc(k.replace(/_/g, " "))}</td><td><code>${esc(Array.isArray(v) ? v.map((x) => (typeof x === "object" ? JSON.stringify(x) : x)).join(", ") : typeof v === "object" ? JSON.stringify(v) : v)}</code></td></tr>`).join("")}</table>`;
+  const polRow = (p) => `<tr><td><b>${esc(p.display_name || p.name)}</b><br><code>${esc(p.type)}</code></td><td>${esc((p.attached_to || []).join(", ") || (BUNDLE.includes(p.name) ? "bundle, attached per use case" : "not attached"))}</td></tr>`;
+  const polBlock = (names) => names.map(pol).filter(Boolean).map((p) => `<h4>${esc(p.display_name || p.name)}</h4><table>${polRow(p)}</table>${kv(p.settings)}`).join("");
+  const targets = (f) => `<table>${models.flatMap((m) => (m.targets || []).filter(f).map((t) => `<tr><td><b>${esc(t.name)}</b><br><code>${esc(m.name)}</code></td><td>${esc(t.provider)} · port ${esc(t.port)}${t.weight != null ? " · weight " + t.weight : ""}<br>$${t.input_cost} in / $${t.output_cost} out per 1M tokens</td></tr>`)).join("")}</table>`;
+  const toolT = () => `<table>${tools.map((x) => `<tr><td><b>${esc(x.name)}</b>${x.destructive ? " · destructive" : ""}<br><code>${esc(x.method)} ${esc(x.path)}</code></td><td>${esc((x.allow || []).join(", "))}</td></tr>`).join("")}</table>`;
+  const contL = (s) => { const c = cont(s); return c ? `<p><code>${esc(c.service)}</code> · <code>${esc(c.image)}</code>${c.ports.length ? " · ports " + esc(c.ports.join(", ")) : ""}</p>` : ""; };
+  const INFO = {
+    cp_config: ["AI Gateway configuration", "Konnect in the ME region; configuration only", () => `${kv({ gateway: cfg.gateway?.display_name, models: models.length, providers: (cfg.providers || []).length, policies: policies.length, "consumer groups": groups.length, consumers: nConsumers, "MCP tools": tools.length, vaults: (cfg.vaults || []).length })}<h4>Policies</h4><table>${policies.map(polRow).join("")}</table>`],
+    cp_analytics: ["Analytics", "chargeback per use case from usage metadata", () => `<p>Fed by the data plane's usage metadata: requests, tokens, cost, latency, model, consumer and use case. No prompt or answer text.</p>`],
+    cp_code: ["Configuration as code", "a CI pipeline runs kongctl diff on each pull request and apply on merge", () => `<p>Baseline in <code>kong/</code>, the 13th use case in <code>onboard/</code>. <code>kongctl diff -f kong/</code> says "No changes" when Konnect matches Git. Commit <code>${esc(cfg.git_commit)}</code>.</p>`],
+    cp_dp: ["Data plane management", "nodes in DC1 and DC2, mTLS certificates, version pinning", () => `<table>${(cfg.nodes || []).map((n) => `<tr><td><b>${esc(n.hostname)}</b></td><td>${esc(n.version)} · ${esc(String(n.compatibility || "").replace("COMPATIBILITY_STATE_", "").toLowerCase().replace(/_/g, " "))}</td></tr>`).join("")}</table>${kv({ "minimum data plane version": cfg.gateway?.min_runtime_version })}`],
+    apps: ["Apps & copilots", "channels and staff copilots, each a use case with OIDC tokens", () => `<table>${APP_GROUPS.map((g) => `<tr><td><b>${esc(g.display_name || g.name)}</b><br><code>${esc(g.name)}</code></td><td>${esc((g.consumers || []).map((c) => c.display_name || c.name).join(", "))}<br>${esc((g.policies || []).join(", ") || "no group policies (baseline)")}</td></tr>`).join("")}${cfg.onboard ? `<tr><td><b>${esc(cfg.onboard.group)}</b><br><code>onboard/</code></td><td>${esc(cfg.onboard.consumer_display)} · applied live<br>${esc(cfg.onboard.policies.join(", "))}</td></tr>` : ""}</table>`],
+    agents: ["AI agents", "the five agentic use cases, each with its own identity and tool permissions", () => `<table>${AGENT_GROUPS.map((g) => `<tr><td><b>${esc(g.display_name || g.name)}</b><br><code>${esc(g.name)}</code></td><td>${esc((g.consumers || []).map((c) => c.display_name || c.name).join(", "))}</td></tr>`).join("")}</table>`],
+    gw: ["Kong AI Gateway · data plane", "stateless nodes on Kubernetes in DC1 and DC2, behind a load balancer", () => `${contL("kong-dp")}<h4>Models</h4><table>${models.map((m) => `<tr><td><b>${esc(m.name)}</b><br><code>${esc((m.route || []).join(", "))}</code></td><td>${esc(m.balancer?.algorithm)} · allow ${esc((m.acl_allow || []).join(", "))}</td></tr>`).join("")}</table>`],
+    ep_llm: ["AI Models · /v1", "one OpenAI-compatible endpoint per model", () => targets(() => true)],
+    ep_mcp: ["AI MCP Server", "the bank's REST APIs exposed as governed tools", () => `<p><code>${esc(mcp.name)}</code> · ${esc(mcp.type)} · upstream <code>${esc(mcp.upstream)}</code> · server allow list <code>${esc((mcp.acl_allow || []).join(", "))}</code></p>${toolT()}`],
+    f_sec: ["Security", "the same reviewed bundle on every use case", () => `<h4>Auth strategy</h4>${kv((cfg.auth || [])[0])}${polBlock(["injection-guard", "pii-redact", "advice-guard", "response-guard"])}`],
+    f_gov: ["Governance", "use cases as consumer groups; one audit line per call to the SIEM", () => `<table>${groups.map((g) => `<tr><td><b>${esc(g.name)}</b></td><td>${esc((g.consumers || []).map((c) => c.name).join(", "))}</td></tr>`).join("")}</table>${polBlock(["audit-log", "ai-metrics"])}`],
+    f_tok: ["Tokenomics", "budgets per use case, cache where answers are generic, routing across sites and model sizes", () => `${polBlock(["token-budget", "standard-budget", "semantic-cache"])}<h4>Balancers</h4><table>${models.map((m) => `<tr><td><b>${esc(m.name)}</b></td><td>${esc(m.balancer?.algorithm)} · retries ${esc(m.balancer?.retries)}${m.balancer?.fail_timeout ? " · fail_timeout " + m.balancer.fail_timeout + " ms" : ""}</td></tr>`).join("")}</table>`],
+    f_ag: ["Agentic", "what an agent may do belongs to its identity", () => `<p>Default for tools without their own rule: <code>${esc((mcp.default_tool_acls || []).join(", "))}</code></p>${toolT()}`],
+    factory: ["AI factory", "64 GPUs, 8 nodes × 8, open-weight Arabic-capable models on vLLM", () => targets((t) => t.port !== 443)],
+    apis: ["Enterprise APIs", "core banking: card services, KYC, case management", () => `${toolT()}${contL("card-services")}`],
+    cloud: ["Cloud LLM", "no route out by default; an approved use case only, redacted first", () => `${targets((t) => t.port === 443)}<p>Its key reaches the data plane from the env vault <code>${esc((cfg.vaults || [])[0]?.name)}</code>; Konnect stores only the reference.</p>`],
+    s_idp: ["Identity provider", "GNB's IdP: OIDC tokens whose groups claim selects the use case", () => `${kv((cfg.auth || [])[0])}<p>Production example: <code>examples/oidc-auth-strategy.yaml</code>.</p>`],
+    s_vault: ["Secrets vault", "HashiCorp Vault or a KMS, referenced by the providers", () => kv((cfg.vaults || [])[0])],
+    s_pii: ["PII service", "Kong's PII service in-cluster; an Arabic model can be plugged in", () => `${contL("pii-service")}${polBlock(["pii-redact"])}`],
+    s_vec: ["Vector DB + embeddings", "pgvector (GNB's vector store) with the factory's embedding model", () => `${contL("redis")}<p>Used by the advice guard, the answer check, the semantic cache and semantic routing.</p>`],
+    s_siem: ["SIEM & monitoring", "the SIEM via http-log or OpenTelemetry, and GNB's monitoring", () => polBlock(["audit-log", "ai-metrics"])],
+  };
+  function inspect(id) {
+    const info = INFO[id]; if (!info) return; lastInspect = id; const box = $("inspector");
+    box.innerHTML = `<button type="button" class="icon close" aria-label="Close">✕</button><h3>${esc(info[0])}</h3><p class="gnb"><b>At GNB:</b> ${esc(info[1])}</p>${info[2]()}`;
+    box.querySelector(".close").onclick = () => { box.hidden = true; }; box.hidden = false;
+  }
+  svg.addEventListener("click", () => { $("inspector").hidden = true; });
+
+  // ---------- live mode: only when served by arch/live.py on the Mac ----------
+  let liveSeq = 0, liveTok = null, liveBusy = 0, liveTimer = null; const liveRows = [];
+  async function probeLive() { try { const c = new AbortController(); setTimeout(() => c.abort(), 1500); const r = await fetch("live?since=0", { cache: "no-store", signal: c.signal }); if (!r.ok) return false; const j = await r.json(); liveSeq = j.seq || 0; return !!j.status; } catch (e) { return false; } }
+  function stopLive() { if (!liveMode) return; liveMode = false; $("b-live").setAttribute("aria-pressed", "false"); $("ticker").hidden = true; if (liveTok) liveTok.alive = false; clearTimeout(liveTimer); resetState(); }
+  function startLive() {
+    tok.alive = false; resetState(); liveMode = true; liveTok = { alive: true }; $("b-live").setAttribute("aria-pressed", "true"); $("ticker").hidden = false;
+    [...nav.children].forEach((b) => b.setAttribute("aria-current", "false"));
+    $("cap-scene").textContent = "Live"; $("cap-title").textContent = "Real calls through the data plane on this Mac, highlighted as they happen.";
+    $("cap-sub").textContent = "Run any act script in the terminal. Each call is read from the data plane's own log; link and node status from its metrics."; pollLive();
+  }
+  $("b-live").onclick = () => (liveMode ? (stopLive(), playFrom(sceneIdx)) : startLive());
+  function applyStatus(st) {
+    if (!st) return;
+    if (cutState !== (st.cp_connected === false)) setCut(st.cp_connected === false);
+    setDown("dc1", st.ports?.["11501"] === false); setDown("dc2", st.ports?.["11502"] === false);
+    for (const [s, c] of [["redis", "s_vec"], ["pii-service", "s_pii"], ["card-services", "apis"]]) if (st.containers && s in st.containers) CARD[c].g.classList.toggle("down", st.containers[s] !== "running");
+    if (view === "demo" && st.config_hash) CARD.cp_dp.lines[0].textContent = `node ${node.hostname} · config ${st.config_hash.slice(0, 8)} · ${st.cp_connected ? "connected" : "disconnected"}`;
+  }
+  function tickerAdd(ev, outcome, good) {
+    liveRows.unshift({ t: new Date(ev.t * 1000).toTimeString().slice(0, 8), who: `${ev.consumer || "anonymous"}${ev.use_case ? " · " + ev.use_case : ""}`, outcome, good }); liveRows.length = Math.min(liveRows.length, 6);
+    $("ticker").innerHTML = `<b>LIVE · LAST CALLS</b>` + liveRows.map((r) => `<div class="row"><span>${esc(r.t)}</span><span>${esc(r.who)}</span><span class="${r.good ? "good" : "badr"}">${esc(r.outcome)}</span></div>`).join("");
+  }
+  function animateEvent(ev) {
+    const t = liveTok, who = AGENTS.has(ev.consumer) ? "agents" : "apps";
+    if (ev.kind === "mcp") { tickerAdd(ev, `${ev.tool || "tools/list"} ${ev.action === "deny" ? "DENY" : "ALLOW"}`, ev.action !== "deny"); return tool({ list: !ev.tool, deny: ev.action === "deny", label: `${ev.tool || "tools/list"} · ${ev.status}`, d: 300 }, t); }
+    const ports = ev.ports || [], port = ports[ports.length - 1];
+    const o = { who, d: 300, pii: !!ev.sanitized, bundleOff: !ev.sanitized && ev.status !== 403, target: port === 443 ? "cloud" : "factory", dr: port === 11502, failover: ports.length > 1 && ports[0] === 11501 && port === 11502 };  // the sanitizer only runs where the bundle is attached
+    let outcome = `${ev.status} · ${ev.model || ""}${ev.tokens ? " · " + ev.tokens + " tok" : ""}`;
+    if (ev.cache === "Hit") { o.cache = "hit"; outcome = "cache hit · no model call"; }
+    else if (ev.status === 429) { o.block = "budget"; outcome = "429 budget"; }
+    else if (ev.status === 401) { o.block = "auth"; outcome = "401 no key"; }
+    else if (ev.status === 403 && ev.denied) { o.block = "acl"; outcome = "403 access denied"; }
+    else if (ev.status === 403 && ev.llm) { o.block = "answer"; o.model = ev.model; outcome = "403 answer blocked"; }
+    else if (ev.status === 403) { o.block = "guard"; o.label = "403 · prompt blocked"; outcome = "403 prompt blocked"; }
+    else o.model = `${ev.status} · ${ev.model || ""}`;
+    tickerAdd(ev, outcome, ev.status < 400); return llm(o, t);
+  }
+  async function pollLive() {
+    if (!liveMode) return;
+    try { const r = await fetch(`live?since=${liveSeq}`, { cache: "no-store" }); const j = await r.json(); applyStatus(j.status);
+      for (const ev of j.events || []) { liveSeq = Math.max(liveSeq, ev.seq); if (liveBusy >= 2) { tickerAdd(ev, ev.kind === "mcp" ? (ev.tool || "tools/list") : String(ev.status), ev.status < 400); continue; } liveBusy++; animateEvent(ev).catch(() => {}).finally(() => { liveBusy--; }); } }
+    catch (e) { /* local server stopped: keep the last state */ }
+    liveTimer = setTimeout(pollLive, 900);
+  }
+
+  // ---------- footer, legend, start ----------
+  $("foot-src").textContent = `Built from the deployed config: Konnect (${cfg.gateway?.display_name || "AI Gateway"}) and docker-compose.yml · ${cfg.generated_at || ""} · commit ${cfg.git_commit || "?"}`;
+  const keyArrow = (c, dash) => `<svg width="44" height="12" viewBox="0 0 44 12"><path d="M2 6H36" stroke="${c}" stroke-width="2.5" ${dash ? `stroke-dasharray="${dash}"` : ""}/><path d="M34 1L43 6L34 11z" fill="${c}"/></svg>`;
+  $("legend").innerHTML = `<div class="k">${keyArrow("#001408")}<span><b>AI traffic</b>: prompts, answers, tool calls. Stays inside GNB.</span></div>
+    <div class="k">${keyArrow("#4A8500", "6 5")}<span><b>Configuration</b> down, <b>usage metadata</b> up.</span></div>
+    <div class="k"><svg width="44" height="26" viewBox="0 0 44 26"><circle cx="13" cy="13" r="12" fill="#001408"/><text x="13" y="18" text-anchor="middle" font-family="Carlito" font-weight="700" font-size="14" fill="#CCFF00">1</text></svg><span><b>Request order</b>, 1 to 5.</span></div>
+    <div class="src">Generated from the deployed configuration (Konnect API, docker-compose.yml), ${esc(cfg.generated_at || "")}.</div>`;
+  setView(SLIDE ? "map" : "map");
+  if (STILL) { $("cap-scene").textContent = "Overview"; $("cap-title").textContent = SCENES[0].steps[1].cap; $("cap-sub").textContent = SCENES[0].steps[1].sub; setPlaying(false); }
+  else {  // served by arch/live.py: start live; anywhere else (the published page): play the scenes
+    const start = Math.max(0, SCENES.findIndex((s) => s.id === hash));
+    probeLive().then((ok) => { if (ok && !hash) { $("b-live").hidden = false; startLive(); } else { if (ok) $("b-live").hidden = false; setTimeout(() => playFrom(start), 500); } });
+  }
+})();
+</script>

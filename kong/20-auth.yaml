@@ -1,0 +1,16 @@
+# AI Auth Strategy: identity per use case. In production this becomes openid-connect against GNB's IdP;
+# the token's groups claim maps onto the same consumer groups, so nothing else changes.
+_defaults:
+  kongctl:
+    namespace: gnb-demo
+ai_gateway_auth_strategies:
+  - ref: gnb-key-auth
+    ai_gateway: !lookup {id: !env AI_GATEWAY_ID}
+    name: gnb-key-auth
+    display_name: GNB API key (per use case)
+    type: key-auth
+    config:
+      key_names: [apikey]
+      key_in_header: true
+      key_in_query: false
+      hide_credentials: true          # the key never reaches the model or the tool

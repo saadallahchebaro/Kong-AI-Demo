@@ -1,0 +1,72 @@
+# AI Consumers: one identity per person, agent or app (fictional test personas).
+# API keys are generated locally into .env.demo-keys and sent once at create time.
+_defaults:
+  kongctl:
+    namespace: gnb-demo
+ai_gateway_consumers:
+  - ref: aisha
+    ai_gateway: !lookup {id: !env AI_GATEWAY_ID}
+    name: aisha
+    display_name: Aisha (retail banking agent)
+    type: api-key
+    credentials:
+      - ref: aisha-key
+        name: aisha-key
+        display_name: Aisha (retail banking agent) key
+        type: api-key
+        api_key: !secret {source: !env KEY_AISHA}
+  - ref: layla
+    ai_gateway: !lookup {id: !env AI_GATEWAY_ID}
+    name: layla
+    display_name: Layla (AML analyst)
+    type: api-key
+    credentials:
+      - ref: layla-key
+        name: layla-key
+        display_name: Layla (AML analyst) key
+        type: api-key
+        api_key: !secret {source: !env KEY_LAYLA}
+  - ref: card-ops-agent-01
+    ai_gateway: !lookup {id: !env AI_GATEWAY_ID}
+    name: card-ops-agent-01
+    display_name: Card-ops AI agent 01
+    type: api-key
+    credentials:
+      - ref: card-ops-agent-01-key
+        name: card-ops-agent-01-key
+        display_name: Card-ops AI agent 01 key
+        type: api-key
+        api_key: !secret {source: !env KEY_CARD_OPS_AGENT}
+  - ref: khalid
+    ai_gateway: !lookup {id: !env AI_GATEWAY_ID}
+    name: khalid
+    display_name: Khalid (card-ops supervisor)
+    type: api-key
+    credentials:
+      - ref: khalid-key
+        name: khalid-key
+        display_name: Khalid (card-ops supervisor) key
+        type: api-key
+        api_key: !secret {source: !env KEY_KHALID}
+  - ref: credit-memo-app
+    ai_gateway: !lookup {id: !env AI_GATEWAY_ID}
+    name: credit-memo-app
+    display_name: Credit memo app
+    type: api-key
+    credentials:
+      - ref: credit-memo-app-key
+        name: credit-memo-app-key
+        display_name: Credit memo app key
+        type: api-key
+        api_key: !secret {source: !env KEY_CREDIT_MEMO}
+  - ref: knowledge-assistant-app
+    ai_gateway: !lookup {id: !env AI_GATEWAY_ID}
+    name: knowledge-assistant-app
+    display_name: Knowledge assistant app
+    type: api-key
+    credentials:
+      - ref: knowledge-assistant-app-key
+        name: knowledge-assistant-app-key
+        display_name: Knowledge assistant app key
+        type: api-key
+        api_key: !secret {source: !env KEY_KNOWLEDGE}
