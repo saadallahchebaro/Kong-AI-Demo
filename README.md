@@ -39,18 +39,18 @@ The deck's argument: Kong AI Gateway is the missing layer between the factory an
 1. **In Konnect**, create an AI Gateway with runtime version **2.2**, used only for this demo. Each start syncs `kong/` to it, which removes any demo object that isn't in `kong/`.
 2. On the gateway's **Data plane nodes** page, add a node. Konnect generates a certificate and key: save them as `certs/cluster.crt` and `certs/cluster.key`, and note the control plane endpoint (`<id>.<region>.cp.konghq.com`).
 3. Create a **personal access token** in Konnect.
-4. Run `./setup.sh`. It checks the tools, asks for the token, the gateway ID, the endpoint and the OpenAI key, and writes `.env`. It also generates the demo's API keys, checks the certificate and your gateway, pulls the models and builds the **GNB demo** launcher. Run it again until everything is ✓; it keeps what's already set.
+4. Run `./setup.sh`. It checks the tools, asks for the token, the gateway ID, the endpoint and the OpenAI key, and writes `.env`. It also generates the demo's API keys, checks the certificate and your gateway, pulls the models and builds the **GNB demo** launcher with `3-cli-ui-webui/launcher/build.sh`. Run it again until everything is ✓; it keeps what's already set.
 
 ### Run it
 
-Double-click **GNB demo** in this folder. It opens the **Run tab**, the run of show as a runbook: **Start the demo**, then **Pre-flight**, then each act step by step. The first start downloads the container images and applies `kong/` to Konnect. Sign in to Konnect once in the Konnect window it opens.
+Double-click **GNB demo** in this folder. The app isn't in Git: `setup.sh` builds it, and `3-cli-ui-webui/launcher/build.sh` rebuilds it on its own if it's missing. It opens the **Run tab**, the run of show as a runbook: **Start the demo**, then **Pre-flight**, then each act step by step. The first start downloads the container images, builds GNB Assist's image from `3-cli-ui-webui/webui/Dockerfile` and applies `kong/` to Konnect. Sign in to Konnect once in the Konnect window it opens.
 
 | Page | Address |
 |---|---|
 | Run tab (keep it off the shared screen) | http://localhost:8098/?run |
 | Live panes: what each site's model received, what Kong decided | http://localhost:8098 |
 | GNB Assist (five test personas, with a "Sign in as" picker) | http://localhost:3000 |
-| Architecture page, built from the deployed config | http://localhost:8099 |
+| Architecture page, built from the deployed config by `arch/build.py` | http://localhost:8099 |
 | Kong data plane (AI traffic, MCP) | http://localhost:8000 |
 
 The same from a terminal: `3-cli-ui-webui/scripts/start.sh`, `preflight.sh`, `reset.sh` (back to baseline) and `shutdown.sh` (stops everything, deletes nothing).
@@ -68,8 +68,8 @@ The same from a terminal: `3-cli-ui-webui/scripts/start.sh`, `preflight.sh`, `re
 | `mocks/card-services/` | The card-services API that Kong turns into MCP tools |
 | `egress/` | The data plane's only route to Konnect: stopping it is the "unplug Konnect" finale |
 | `scripts/` | The shared stack's scripts: factory, reset, pre-flight, act scripts, Konnect cut |
-| `3-cli-ui-webui/` | The scenario: GNB Assist (`webui/`), the live panes and Run tab (`panes/`), the stage scripts (`scripts/`) and the launcher |
-| `arch/` | The architecture page and its live server |
+| `3-cli-ui-webui/` | The scenario: GNB Assist (`webui/`), the live panes and Run tab (`panes/`), the stage scripts (`scripts/`) and the launcher (`launcher/build.sh` builds **GNB demo**) |
+| `arch/` | The architecture page: `build.py` builds it from your gateway's deployed config, and `live.py` serves it |
 | `agent/`, `app/` | The card-ops agent the act scripts run, and the six-line app example |
 | `examples/` | An OIDC auth strategy, shown as config only |
 
